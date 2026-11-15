@@ -507,7 +507,14 @@ function viewSettings() {
       <div class="m-set"><span>한 주의 시작</span>${seg('weekStart', [[0, '일요일'], [1, '월요일']])}</div>
       <div class="m-set"><span>공휴일 표시</span>${seg('showHolidays', [[true, '켜기'], [false, '끄기']])}</div>
     </div>
-    ${standalone ? '' : `<div class="m-card m-pad m-install">
+    ${isAndroid && !ANDROID_APP ? `<div class="m-card m-pad m-install">
+      <b>${icon('share')}안드로이드 앱(APK)으로 설치하기</b>
+      <p>갤럭시는 앱 파일(APK)로 설치할 수도 있어요. 설치한 뒤에도 화면은 자동으로 최신이 돼요.</p>
+      <a class="m-btn primary" href="HaruPlanner.apk" download>APK 받기</a>
+      <p class="m-muted">처음 설치할 때 "출처를 알 수 없는 앱" 허용을 물어보면 허용해 주세요.</p>
+    </div>` : ''}
+    ${ANDROID_APP ? `<p class="m-foot">안드로이드 앱 ${esc(ANDROID_APP.slice(1).join('.'))}</p>` : ''}
+    ${standalone || ANDROID_APP ? '' : `<div class="m-card m-pad m-install">
       <b>${icon('share')}홈 화면에 앱으로 추가하기</b>
       <p><b>아이폰 (Safari)</b>: 아래 공유 버튼 ${icon('share', 'mini')} → <b>홈 화면에 추가</b></p>
       <p><b>갤럭시 (Chrome · 삼성 인터넷)</b>: 오른쪽 위 ⋮ (또는 ≡) → <b>홈 화면에 추가 / 앱 설치</b></p>
@@ -1120,9 +1127,48 @@ function demoData() {
   return d;
 }
 
+// ---------- 업데이트 알림 ----------
+// 1) 웹 앱: 새로 올리면 서비스 워커가 새 파일을 받아 두고 → "새 버전이 있어요" 를 띄워요
+// 2) 안드로이드 앱(APK): 앱 껍데기 버전이 낮으면 새 APK 를 받으라고 알려요
+const ANDROID_APP = /HaruPlannerAndroid\/(\d+)\.(\d+)\.(\d+)/.exec(navigator.userAgent);
+const isAndroid = /Android/i.test(navigator.userAgent);
+function setupUpdates() {
+  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    const check = () => reg.update().catch(() => {});
+    setInterval(check, 30 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  }).catch(() => {});
+  let shown = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || shown) return; // 처음 설치할 땐 알리지 않아요
+    shown = true;
+    toast('HaruPlanner 새 버전이 있어요', { action: '업데이트', timeout: 30000, onAction: () => location.reload() });
+  });
+  checkApk();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkApk(); });
+}
+let apkInfo = null;
+let apkNotified = false;
+async function checkApk() {
+  if (!isAndroid) return;
+  try {
+    const r = await fetch(`app-version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    apkInfo = (await r.json()).android || null;
+  } catch (_) { return; }
+  if (!apkInfo || !ANDROID_APP || apkNotified) return;
+  const mine = Number(ANDROID_APP[1]) * 10000 + Number(ANDROID_APP[2]) * 100 + Number(ANDROID_APP[3]);
+  if (apkInfo.versionCode > mine) {
+    apkNotified = true;
+    toast(`안드로이드 앱 새 버전 ${apkInfo.version} 이 나왔어요`, { action: '받기', timeout: 30000, onAction: () => { location.href = apkInfo.apk; } });
+  }
+}
+
 async function boot() {
   applyTheme();
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  setupUpdates();
   if (DEMO) { state.data = normalize(demoData()); applyTheme(); render(); return; }
   const cfg = Cloud.config();
   if (!cfg) { $('#app').innerHTML = '<div class="m-loading"><p>클라우드 설정(config.js)이 없어요</p></div>'; return; }
