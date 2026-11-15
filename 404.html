@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HaruPlanner</title>
+  <!-- 주소 끝에 다른 글자가 붙어 들어와도(복사할 때 ** 나 띄어쓰기 등) 앱 첫 화면으로 보내요 -->
+  <script>
+    (function () {
+      var seg = location.pathname.split('/').filter(Boolean)[0] || '';
+      var base = seg && location.hostname.endsWith('github.io') ? '/' + seg + '/' : '/';
+      var keep = /[?&](code|error_description|demo)/.test(location.search) ? location.search : '';
+      location.replace(base + keep + location.hash);
+    })();
+  </script>
+  <style>body{margin:0;height:100vh;display:grid;place-items:center;font-family:-apple-system,sans-serif;background:#fff9f4;color:#7c6f7f}</style>
+</head>
+<body>HaruPlanner 로 이동하는 중…</body>
+</html>
