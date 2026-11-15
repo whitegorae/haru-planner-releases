@@ -362,3 +362,18 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
   .m-head h1 { font-size: 26px; }
   .m-seg button { padding: 0 9px; font-size: 13px; }
 }
+
+/* ===================== 사진 일기 ===================== */
+.m-cell-ph { position: absolute; top: 4px; right: 3px; width: calc(18 * var(--u)); height: calc(18 * var(--u)); border-radius: 5px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); background: var(--hover); }
+.m-cell-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.m-cell .m-cell-dd { right: auto; left: 5px; }
+.m-photos { margin: 0 0 14px; }
+.m-photos-h { display: flex; align-items: center; gap: 6px; padding: 6px 4px; font-size: calc(15 * var(--u)); color: var(--text-2); }
+.m-photos-h b { font-weight: normal; font-family: var(--font-sub); color: var(--text-3); }
+.m-photos-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.m-photos-row::-webkit-scrollbar { display: none; }
+.m-ph { flex: 0 0 auto; width: calc(72 * var(--u)); height: calc(72 * var(--u)); border-radius: 16px; overflow: hidden; background: var(--hover); box-shadow: var(--shadow-soft); }
+.m-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.m-ph:active { transform: scale(.96); }
+.m-ph.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--accent); background: var(--panel); border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: none; font-size: 13px; }
+.m-ph.add .ic { width: 24px; height: 24px; }

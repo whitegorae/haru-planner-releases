@@ -23,7 +23,7 @@ const Cloud = (() => {
   const EVENTS = 'events';
   const META = 'planner_meta';
   const DEVICE_SETTINGS = ['zoom', 'sidebarCollapsed', 'closeToTray', 'openAtLogin', 'gcalSync', 'gcalCalendarId', 'gcalListId']; // 구글 연결은 PC 마다 따로
-  const META_KINDS = { list: 'lists', dday: 'ddays', session: 'sessions' };
+  const META_KINDS = { list: 'lists', dday: 'ddays', session: 'sessions', photo: 'photos' }; // photo: 사진 일기 (파일은 Storage, 목록은 여기)
 
   let client = null;
   let user = null;
@@ -187,7 +187,7 @@ const Cloud = (() => {
     if (prop) data[prop] = data[prop].filter((x) => x.id !== id);
   }
   function buildData(rows, base) {
-    const data = { version: 3, lists: [], tasks: [], ddays: [], sessions: [], activeTimer: null, settings: { ...base.settings } };
+    const data = { version: 3, lists: [], tasks: [], ddays: [], sessions: [], photos: [], activeTimer: null, settings: { ...base.settings } };
     for (const r of rows) applyRowTo(data, r.kind, r.id, strip(r.data));
     Object.assign(data.settings, deviceSettings());
     return data;
@@ -241,6 +241,7 @@ const Cloud = (() => {
     return user;
   }
   async function signOut() {
+    if (typeof Photos !== 'undefined') Photos.clearCache(); // 사진 보기 주소도 이 기기에서 지워요
     stop();
     try { await client.auth.signOut(); } catch (_) { /* 무시 */ }
     user = null;
@@ -306,6 +307,8 @@ const Cloud = (() => {
   }
   // 계정 삭제: DB 함수 delete_my_account() 가 본인 일정·설정과 계정을 함께 지워요
   async function deleteAccount() {
+    // 사진 파일(Storage)은 DB 함수로 못 지워서 먼저 지워요
+    try { const d = getData(); if (d && d.photos && d.photos.length && typeof Photos !== 'undefined') await Photos.removeFiles(d.photos); } catch (_) { /* 계속 진행 */ }
     stop();
     const { error } = await client.rpc('delete_my_account');
     if (!error) { await signOut(); return { ok: true, accountDeleted: true }; }
@@ -569,6 +572,7 @@ const Cloud = (() => {
   window.addEventListener('online', () => { if (active) resync(); });
 
   return {
+    client: () => client,
     config, saveConfig, connect, currentUser, signIn, signOut, fetchAll, buildData, start, stop,
     signUp, resendSignup, verifyCode, sendReset, updatePassword, handleAuthUrl, deleteAccount,
     setRemember, remembering, REDIRECT,

@@ -94,7 +94,7 @@ function defaultData() {
   return {
     version: 3,
     lists: [{ id: 'inbox', name: '수신함', color: '#8f9cff', system: true }, { id: uid(), name: '개인', color: '#8fd694' }, { id: uid(), name: '업무', color: '#ff9b73' }],
-    tasks: [], ddays: [], sessions: [], activeTimer: null, settings: baseSettings(),
+    tasks: [], ddays: [], sessions: [], photos: [], activeTimer: null, settings: baseSettings(),
   };
 }
 function normalize(data) {
@@ -106,6 +106,7 @@ function normalize(data) {
   data.tasks = data.tasks.map((t) => ({ ...makeTask(), ...t, subtasks: Array.isArray(t.subtasks) ? t.subtasks : [] }));
   data.ddays = Array.isArray(data.ddays) ? data.ddays : [];
   data.sessions = Array.isArray(data.sessions) ? data.sessions : [];
+  data.photos = Array.isArray(data.photos) ? data.photos : [];
   data.activeTimer = data.activeTimer || null;
   data.settings = { ...baseSettings(), ...(data.settings || {}) };
   return data;
@@ -280,6 +281,7 @@ function render() {
   view.dataset.tab = state.tab + (state.listView || '');
   view.innerHTML = ({ today: viewToday, calendar: viewCalendar, lists: viewLists, dday: viewDday, settings: viewSettings })[state.tab]();
   view.scrollTop = keep;
+  Photos.hydrate(view);
 }
 
 function syncDot(compact = false) {
@@ -324,6 +326,47 @@ function empty(ic, text, sub = '') {
   return `<div class="m-empty">${icon(ic)}<p>${text}</p>${sub ? `<span>${sub}</span>` : ''}</div>`;
 }
 
+// ---- 사진 일기 ----
+const photosOn = (d) => (state.data.photos || []).filter((p) => p.date === d).sort((a, b) => a.createdAt - b.createdAt);
+function cellPhoto(d) {
+  const ps = photosOn(d);
+  return ps.length ? `<span class="m-cell-ph">${Photos.imgTag(ps[0].thumb)}</span>` : '';
+}
+function photoStrip(d, title = '사진') {
+  const ps = photosOn(d);
+  return `<div class="m-photos">
+    <div class="m-photos-h"><span>${title}</span>${ps.length ? `<b>${ps.length}</b>` : ''}</div>
+    <div class="m-photos-row">
+      ${ps.map((p) => `<button class="m-ph" data-a="ph-open" data-d="${d}" data-id="${p.id}">${Photos.imgTag(p.thumb)}</button>`).join('')}
+      <button class="m-ph add" data-a="ph-add" data-d="${d}" aria-label="사진 추가">${icon('plus')}<span>사진</span></button>
+    </div>
+  </div>`;
+}
+function photoReady() {
+  if (DEMO) { toast('미리보기에서는 사진을 올릴 수 없어요. 로그인하면 쓸 수 있어요'); return false; }
+  if (!canEdit()) return false;
+  return true;
+}
+async function addPhotos(date, files) {
+  let ok = 0;
+  for (let i = 0; i < files.length; i++) {
+    toast(`사진 올리는 중… ${files.length > 1 ? `(${i + 1}/${files.length})` : ''}`, { timeout: 2500 });
+    try { state.data.photos.push(await Photos.add(date, files[i])); ok++; commit(); } catch (err) { toast(Photos.errText(err), { timeout: 6000 }); break; }
+  }
+  if (ok) toast(`사진 ${ok}장을 올렸어요`);
+}
+function openPhotos(date, startId) {
+  if (DEMO) { toast('미리보기에서는 사진을 볼 수 없어요'); return; }
+  Photos.openViewer({
+    title: `${dateLabel(date)}의 사진`,
+    startId,
+    getList: () => photosOn(date),
+    onAdd: async (file) => { if (!canEdit()) throw new Error('오프라인이에요'); state.data.photos.push(await Photos.add(date, file)); commit(); },
+    onDelete: async (p) => { await Photos.removeFiles([p]); state.data.photos = state.data.photos.filter((x) => x.id !== p.id); commit(); },
+    onCaption: (p, text) => { const x = state.data.photos.find((y) => y.id === p.id); if (x) { x.caption = text; commit(); } },
+  });
+}
+
 // ---- 오늘 ----
 function viewToday() {
   const t = todayStr();
@@ -336,6 +379,7 @@ function viewToday() {
   const hol = holidayOf(t);
   return `${head('오늘', `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS[d.getDay()]}요일${hol ? ` · ${esc(hol)}` : ''}`)}
     ${nd ? `<button class="m-dday-strip" data-a="tab" data-k="dday" style="--c:${esc(ddColor(nd.x))}"><b>${nd.label}</b><span>${esc(nd.x.title)}</span>${icon('chevR')}</button>` : ''}
+    ${photoStrip(t, '오늘의 사진')}
     ${section('over', '지난 일정', over)}
     ${section('today', '오늘', today, { hideDate: true })}
     ${!over.length && !today.length ? empty('sun', '오늘 할 일이 없어요', '아래 + 를 눌러 추가해 보세요') : ''}
@@ -363,7 +407,7 @@ function viewCalendar() {
     const shown = items.slice(0, 3);
     cells += `<button class="m-cell${out ? ' out' : ''}${d === t ? ' today' : ''}${d === state.calSel ? ' sel' : ''}${wd === 0 || hol ? ' sun' : wd === 6 ? ' sat' : ''}" data-a="cal-day" data-d="${d}">
       <span class="m-cell-n">${parseYmd(d).getDate()}</span>
-      ${dd ? `<i class="m-cell-dd" style="background:${esc(ddColor(dd))}"></i>` : ''}
+      ${dd ? `<i class="m-cell-dd" style="background:${esc(ddColor(dd))}"></i>` : ''}${cellPhoto(d)}
       <span class="m-cell-bars">${shown.map((x) => `<span class="m-bar ${x.done ? 'done' : ''}" style="--c:${esc(taskColor(x))}">${esc(x.title)}</span>`).join('')}${items.length > 3 ? `<span class="m-more">+${items.length - 3}</span>` : ''}</span>
     </button>`;
     if (i === 34 && addDays(start, 35).slice(0, 7) !== state.calMonth) break; // 5주면 5줄만
@@ -377,6 +421,7 @@ function viewCalendar() {
     <div class="m-cal" id="mCal"><div class="m-cal-wd">${heads}</div><div class="m-cal-grid">${cells}</div></div>
     <div class="m-day">
       <div class="m-day-h"><b>${dateLabel(sel)}</b>${selHol ? `<span class="m-hol">${esc(selHol)}</span>` : ''}${selDd.map((x) => `<span class="m-dd-chip" style="--c:${esc(ddColor(x))}">${icon('dday')}${esc(x.title)}</span>`).join('')}</div>
+      ${photoStrip(sel)}
       ${selItems.length ? selItems.map((x) => taskRow(x, { hideDate: true })).join('') : `<p class="m-day-empty">일정이 없어요 · + 로 추가</p>`}
     </div>
     <div class="m-bottom-space"></div>`;
@@ -730,6 +775,8 @@ document.addEventListener('click', (e) => {
       else openTaskSheet('add', { date: todayStr() });
       break;
     case 'toggle': e.stopPropagation(); toggleDone(id); break;
+    case 'ph-open': openPhotos(el.dataset.d, id); break;
+    case 'ph-add': { const d = el.dataset.d; if (photoReady()) Photos.pickFiles((files) => addPhotos(d, files)); break; }
     case 'open-task': openTaskSheet('edit', { id }); break;
     case 'sec': {
       const k = el.dataset.k;
@@ -1014,6 +1061,7 @@ function loading(text = '일정을 불러오는 중…') {
 }
 function onRemote() {
   render();
+  Photos.refreshViewer();
   saveCacheSoon();
   if (taskSheet && taskSheet.mode === 'edit' && !taskById(taskSheet.id)) { closeSheet({ silent: true }); taskSheet = null; toast('다른 기기에서 이 할 일을 지웠어요'); }
 }
