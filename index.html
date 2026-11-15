@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <!-- viewport-fit=cover: 아이폰 노치·다이내믹 아일랜드 영역까지 꽉 채우고, 안쪽 여백은 safe-area 로 맞춰요 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self'; manifest-src 'self'">
+  <title>HaruPlanner</title>
+  <meta name="description" content="하루 일정 · 캘린더 · 디데이 (데스크톱 HaruPlanner 와 실시간 동기화)">
+  <meta name="theme-color" content="#fff9f4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1f1b24" media="(prefers-color-scheme: dark)">
+  <!-- 홈 화면에 추가하면 앱처럼 (주소창 없이) 열려요 -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="HaruPlanner">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+  <div id="app" class="m-app"></div>
+  <div id="sheetRoot"></div>
+  <div id="toasts" class="m-toasts"></div>
+  <script src="config.js"></script>
+  <script src="vendor/supabase.js"></script>
+  <script src="shared.js"></script>
+  <script src="cloud.js"></script>
+  <script src="mobile.js"></script>
+</body>
+</html>
