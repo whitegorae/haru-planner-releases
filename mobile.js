@@ -187,6 +187,7 @@ function loadCache() { try { return normalize(JSON.parse(localStorage.getItem(CA
 function save() {
   if (!DEMO && Cloud.isActive()) { Cloud.saveDevice(S()); Cloud.schedulePush(); }
   saveCacheSoon();
+  if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 폰 캘린더로도 보내요
 }
 function commit() { save(); render(); }
 const canEdit = () => {
@@ -515,6 +516,7 @@ function viewSettings() {
       <p class="m-muted">처음 설치할 때 "출처를 알 수 없는 앱" 허용을 물어보면 허용해 주세요.</p>
     </div>` : ''}
     ${ANDROID_APP ? `<p class="m-foot">안드로이드 앱 ${esc(ANDROID_APP.slice(1).join('.'))}${apkInfo && apkNewer() ? ` · <button class="m-link" data-a="apk-update">새 버전 ${esc(apkInfo.version)} 설치</button>` : ''}</p>` : ''}
+    ${calCardsHTML()}
     ${changelogCardHTML()}
     ${standalone || ANDROID_APP ? '' : `<div class="m-card m-pad m-install">
       <b>${icon('share')}홈 화면에 앱으로 추가하기</b>
@@ -856,6 +858,14 @@ document.addEventListener('click', (e) => {
       break;
     case 'go-login': location.href = location.pathname; break;
     case 'apk-update': installApk(); break;
+    // 캘린더 연동
+    case 'cs-connect': CalSync.connect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }, 'inbox').catch((err) => toast(err.message)); break;
+    case 'cs-cancel': CalSync.cancelWait(); break;
+    case 'cs-sync': CalSync.syncNow(); break;
+    case 'cs-disconnect': if (confirm('구글 캘린더 연결을 끊을까요? 이미 가져온 일정은 그대로 남아요.')) CalSync.disconnect(); break;
+    case 'dc-enable': DevCal.enable().then((ok) => { if (ok) toast('폰 캘린더와 연동했어요'); }).catch((err) => toast(err.message)); break;
+    case 'dc-disable': DevCal.disable(); toast('폰 캘린더 연동을 껐어요'); break;
+    case 'dc-sync': DevCal.sync(); break;
     // 시트
     case 'sheet-close': closeSheet(); break;
     case 'pick': if (pickHandler) pickHandler(Number(el.dataset.i)); break;
@@ -928,6 +938,12 @@ document.addEventListener('input', (e) => {
 });
 document.addEventListener('change', (e) => {
   const t = e.target;
+  if (t.id === 'mCsCal') { CalSync.setCalendar(t.value); return; }
+  if (t.id === 'mCsList') { CalSync.setList(t.value); return; }
+  if (t.id === 'mDcTarget') { DevCal.setTarget(t.value); return; }
+  if (t.id === 'mDcList') { DevCal.setList(t.value); return; }
+  if (t.dataset && t.dataset.dc === 'cal') { DevCal.setCals([...document.querySelectorAll('[data-dc="cal"]:checked')].map((x) => x.value)); return; }
+  if (t.id === 'mDcPush') { DevCal.setPush(t.checked); return; }
   if (t.id === 'tsList' && taskSheet) { taskSheet.d.listId = t.value; applyEdit(); refreshTaskSheet(); return; }
   if (!dateDraft) return;
   if (t.id === 'dpTime') { const old = dateDraft.time; dateDraft.time = t.value || null; if (!dateDraft.time) dateDraft.endTime = null; else if (old && dateDraft.endTime) dateDraft.endTime = hmStr(clamp(hm(dateDraft.endTime) + hm(dateDraft.time) - hm(old), 0, 23 * 60 + 59)); refreshDateSheet(); }
@@ -1073,6 +1089,7 @@ function loading(text = '일정을 불러오는 중…') {
 }
 function onRemote() {
   render();
+  if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 다른 기기에서 바꾼 것도 폰 캘린더로
   Photos.refreshViewer();
   saveCacheSoon();
   if (taskSheet && taskSheet.mode === 'edit' && !taskById(taskSheet.id)) { closeSheet({ silent: true }); taskSheet = null; toast('다른 기기에서 이 할 일을 지웠어요'); }
@@ -1103,6 +1120,8 @@ async function startCloud() {
   saveCacheSoon();
   widgetInbox();
   setTimeout(showWhatsNew, 1200);
+  if (typeof DevCal !== 'undefined') DevCal.start();
+  if (typeof CalSync !== 'undefined') CalSync.refresh();
 }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-a="retry-boot"]')) startCloud(); });
 Cloud.onStatus(() => { if (state.data) { const s = $('.m-sync'); if (s) s.outerHTML = syncDot(); if (state.tab === 'settings') render(); } });
@@ -1196,6 +1215,66 @@ function autoReload() {
   const tryGo = () => { if (topSheet() || typing()) { setTimeout(tryGo, 2000); return; } go(); };
   setTimeout(tryGo, 2500);
 }
+// ---------- 캘린더 연동 카드 (설정) ----------
+let calHooked = false;
+function calCardsHTML() {
+  if (DEMO) return '';
+  if (!calHooked) {
+    calHooked = true;
+    const re = () => { if (state.tab === 'settings') { const a = document.getElementById('mCalCards'); if (a) a.outerHTML = calCardsHTML(); } };
+    if (typeof CalSync !== 'undefined') CalSync.onStatus(re);
+    if (typeof DevCal !== 'undefined') DevCal.onStatus(re);
+  }
+  const lists = state.data.lists;
+  const opts = (cur) => lists.map((l) => `<option value="${l.id}" ${l.id === cur ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+  const time = (ms) => { const d = new Date(ms); return `${d.getHours() < 12 ? '오전' : '오후'} ${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`; };
+  // 구글 (서버 동기화)
+  const c = CalSync.status();
+  let g;
+  if (c.notReady) g = '<p class="m-muted">서버 준비가 아직 안 됐어요.</p>';
+  else if (!c.link) {
+    g = `<button class="m-btn primary" data-a="cs-connect" ${c.waiting ? 'disabled' : ''}>${c.waiting ? '구글 화면에서 "허용"을 기다리는 중…' : '구글 캘린더 연동하기'}</button>
+      ${c.waiting ? '<button class="m-btn" data-a="cs-cancel">취소</button>' : ''}
+      <p class="m-muted">구글 화면이 열리면 계정을 고르고 <b>허용</b>만 누르면 끝이에요. 다 되면 이 앱으로 돌아와 주세요.</p>`;
+  } else {
+    const L = c.link;
+    const cals = c.calendars || [{ id: L.calendar_id, name: L.calendar_id === 'primary' ? (L.email || '기본 캘린더') : L.calendar_id }];
+    g = `<p class="m-muted">연결됨: <b>${esc(L.email || '구글 계정')}</b></p>
+      <div class="m-set"><span>구글 캘린더</span><select id="mCsCal" class="m-select">${cals.map((x) => `<option value="${esc(x.id)}" ${x.id === L.calendar_id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+      <div class="m-set"><span>가져온 일정 목록</span><select id="mCsList" class="m-select">${opts(L.list_id)}</select></div>
+      <p class="m-muted">${c.busy ? '동기화 중…' : L.last_sync ? `마지막 동기화 ${time(new Date(L.last_sync).getTime())} · 30초마다 자동` : '첫 동기화를 준비하는 중…'}</p>
+      ${L.last_error ? `<p class="m-err">${esc(L.last_error)}</p>` : ''}
+      <div class="m-row2"><button class="m-btn" data-a="cs-sync">지금 맞추기</button><button class="m-btn" data-a="cs-disconnect">연결 끊기</button></div>`;
+  }
+  // 삼성 · 폰 캘린더 (안드로이드 앱)
+  let s = '';
+  if (ANDROID_APP) {
+    if (typeof DevCal === 'undefined' || !DevCal.available) s = '<p class="m-muted">안드로이드 앱을 새 버전(1.3.0 이상)으로 업데이트하면 삼성 캘린더와 연동할 수 있어요.</p>';
+    else {
+      const d = DevCal.status();
+      const cfg = DevCal.config();
+      if (!cfg.on || !d.granted) {
+        s = `<button class="m-btn primary" data-a="dc-enable">삼성 캘린더 연동하기</button>
+          <p class="m-muted">누르면 "캘린더 허용"을 물어봐요. <b>허용</b>만 누르면 끝이에요.</p>`;
+      } else {
+        const cals = (d.calendars || []).filter((x) => !x.google);
+        const writable = cals.filter((x) => x.writable);
+        s = `<p class="m-muted">맞출 폰 캘린더</p>
+          <div class="m-checks">${cals.map((x) => `<label><input type="checkbox" data-dc="cal" value="${esc(x.id)}" ${(cfg.calIds || []).includes(x.id) ? 'checked' : ''}><span class="m-dot" style="background:${esc(x.color || '#999')}"></span>${esc(x.name || x.account || '캘린더')}</label>`).join('') || '<span class="m-muted">구글이 아닌 캘린더가 없어요</span>'}</div>
+          <div class="m-set"><span>할 일을 넣을 캘린더</span><select id="mDcTarget" class="m-select">${writable.map((x) => `<option value="${esc(x.id)}" ${x.id === cfg.target ? 'selected' : ''}>${esc(x.name || x.account)}</option>`).join('')}</select></div>
+          <div class="m-set"><span>가져온 일정 목록</span><select id="mDcList" class="m-select">${opts(cfg.listId || 'inbox')}</select></div>
+          <label class="m-set"><span>하루플래너 할 일을 폰 캘린더로 보내기</span><input type="checkbox" id="mDcPush" ${cfg.push !== false ? 'checked' : ''}></label>
+          <p class="m-muted">${d.busy ? '맞추는 중…' : d.lastAt ? `마지막 ${time(d.lastAt)} · 앱이 켜져 있는 동안 바로바로 맞춰요` : ''}</p>
+          ${d.error || d.warn ? `<p class="m-err">${esc(d.error || d.warn)}</p>` : ''}
+          <div class="m-row2"><button class="m-btn" data-a="dc-sync">지금 맞추기</button><button class="m-btn" data-a="dc-disable">끄기</button></div>`;
+      }
+    }
+  }
+  return `<div id="mCalCards"><div class="m-card m-pad m-cal"><b class="m-clog-h">구글 캘린더</b>${g}
+      <p class="m-muted small">서버에서 돌아가서 폰 · PC 가 꺼져 있어도 1분 안에 맞춰져요.</p></div>
+    ${s ? `<div class="m-card m-pad m-cal"><b class="m-clog-h">삼성 캘린더 · 폰 캘린더</b>${s}
+      <p class="m-muted small">구글 계정 캘린더는 위 "구글 캘린더" 연동이 맡아요 (두 번 생기지 않게 여기서는 빼요).</p></div>` : ''}</div>`;
+}
 // 업데이트 뒤 처음 열면 무엇이 바뀌었는지 알려줘요
 const MY_PLATFORM = ANDROID_APP ? 'android' : 'phone';
 function showWhatsNew() {
@@ -1208,9 +1287,9 @@ function showWhatsNew() {
 }
 function changelogCardHTML() {
   const ver = (APP_VERSION || '').split('-')[0];
-  const list = changelogFor(MY_PLATFORM).slice(0, 6);
+  const list = changelogRecent(MY_PLATFORM, ver);
   return `<div class="m-card m-pad m-clog" id="mChangelog"><b class="m-clog-h">업데이트 내역</b>
-    ${list.map((e, i) => `<details ${i === 0 ? 'open' : ''}><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : ''}<span class="m-muted">${esc(e.date || '')}</span></summary>
+    ${list.map((e) => `<details open><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : '<span class="m-clog-prev">이전 버전</span>'}<span class="m-muted">${esc(e.date || '')}</span></summary>
       <ul>${e.items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>`).join('')}</div>`;
 }
 

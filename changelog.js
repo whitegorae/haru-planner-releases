@@ -6,6 +6,15 @@
  */
 const CHANGELOG = [
   {
+    v: '1.14.0', date: '2026-11-16',
+    items: [
+      '설정 → 캘린더 연동: 구글 캘린더와 양방향 연동 ("연동하기" → 구글에서 "허용"만 누르면 끝)',
+      '구글 연동은 서버에서 돌아서 PC · 폰이 꺼져 있어도 1분 안에 맞춰져요',
+      '[안드로이드] 삼성 캘린더 · 폰 캘린더와 양방향 연동 (앱이 켜져 있는 동안 바로바로)',
+      '업데이트 내역은 지금 버전과 이전 버전만 보여줘요',
+    ],
+  },
+  {
     v: '1.13.0', date: '2026-11-16',
     items: [
       '[PC] 업데이트가 설치 창 없이 앱 안에서 자동으로 설치돼요',
@@ -50,4 +59,11 @@ function changelogFor(platform) {
   };
   return CHANGELOG.map((e) => ({ ...e, items: e.items.filter(ok).map((s) => s.replace(/^\[(PC|폰|안드로이드)\]\s*/, '')) })).filter((e) => e.items.length);
 }
-const verNum = (v) => String(v || '').split(/[.-]/).slice(0, 3).map(Number).reduce((a, n) => a * 1000 + (n || 0), 0);
+// 지금 버전과 바로 전 버전의 내역만 (그보다 오래된 건 안 보여줘요)
+function changelogRecent(platform, current) {
+  const list = changelogFor(platform);
+  const cur = verNum(current);
+  const i = list.findIndex((e) => verNum(e.v) <= cur);
+  return i < 0 ? list.slice(0, 2) : list.slice(i, i + 2);
+}
+const verNum =(v) => String(v || '').split(/[.-]/).slice(0, 3).map(Number).reduce((a, n) => a * 1000 + (n || 0), 0);

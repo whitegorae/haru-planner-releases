@@ -1,11 +1,14 @@
 /* HaruPlanner 모바일 서비스 워커: 앱 화면 파일을 폰에 저장해 두고 빨리(오프라인에서도) 열어요.
  * 일정 데이터(Supabase)는 여기서 저장하지 않아요. 버전과 파일 목록은 빌드할 때 scripts/build-mobile.js 가 채워요. */
-const CACHE = "haru-mobile-1.13.0-mwj4nfx3";
+const CACHE = "haru-mobile-1.14.0-mwj5egua";
 const FILES = [
   "./",
+  "calsync.js",
   "changelog.js",
   "cloud.js",
   "config.js",
+  "connected.html",
+  "devcal.js",
   "fonts/Dahyun.ttf",
   "fonts/Euiyeon.ttf",
   "icons/apple-touch-icon.png",

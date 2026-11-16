@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>HaruPlanner 연동</title>
+  <link rel="icon" href="icons/icon-192.png">
+  <style>
+    :root { --bg: #fff9f4; --panel: #ffffff; --text: #4b3f4c; --text2: #7c6f7f; --accent: #ff8fab; --soft: rgba(255, 143, 171, .16); --bad: #e5556b; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1f1b24; --panel: #27212e; --text: #f4ecf3; --text2: #c7b9c6; --soft: rgba(255, 143, 171, .2); } }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+    .card { width: 100%; max-width: 420px; background: var(--panel); border-radius: 28px; padding: 32px 26px; text-align: center; box-shadow: 0 14px 40px rgba(175, 110, 110, .18); }
+    .ic { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 16px; background: var(--soft); color: var(--accent); font-size: 32px; }
+    .bad .ic { color: var(--bad); }
+    h1 { font-size: 21px; margin: 0 0 10px; }
+    p { margin: 6px 0; color: var(--text2); line-height: 1.6; font-size: 15px; }
+    b { color: var(--text); }
+    a.btn { display: inline-block; margin-top: 18px; padding: 13px 24px; border-radius: 999px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card"></div>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var ok = q.get('gcal') === 'ok';
+      var msg = q.get('msg') || '';
+      var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+      var card = document.getElementById('card');
+      if (!ok) card.className = 'card bad';
+      card.innerHTML = ok
+        ? '<div class="ic">✓</div><h1>구글 캘린더를 연결했어요</h1>' + (msg ? '<p><b>' + esc(msg) + '</b></p>' : '') +
+          '<p>지금부터 하루플래너와 구글 캘린더가 1분 안에 서로 맞춰져요.<br>이 창은 닫고 HaruPlanner 로 돌아가세요.</p>' +
+          '<a class="btn" href="./">HaruPlanner 열기</a>'
+        : '<div class="ic">!</div><h1>연결하지 못했어요</h1><p>' + esc(msg || '잠시 뒤 다시 시도해 주세요') + '</p>' +
+          '<p>HaruPlanner 설정 → 캘린더 연동에서 다시 눌러 주세요.</p><a class="btn" href="./">HaruPlanner 열기</a>';
+    })();
+  </script>
+</body>
+</html>
