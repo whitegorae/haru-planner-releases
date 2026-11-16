@@ -1290,7 +1290,11 @@ function calCardsHTML() {
   }
   // 삼성 · 폰 캘린더 (안드로이드 앱)
   let s = '';
-  if (ANDROID_APP) {
+  if (!ANDROID_APP && isAndroid) { // 크롬 · 삼성 인터넷 · 홈 화면 웹 앱으로 연 경우: 폰 캘린더는 안드로이드 앱에서만 열 수 있어요
+    s = `<p class="m-muted">삼성 캘린더 연동은 <b>하루플래너 안드로이드 앱</b>에서 할 수 있어요. 지금은 웹(브라우저)으로 열려 있어서 폰 캘린더에 접근할 수 없어요.</p>
+      <a class="m-btn primary" href="HaruPlanner.apk" download>안드로이드 앱 받기</a>
+      <p class="m-muted small">설치한 뒤 그 앱에서 로그인 → 설정 → "삼성 캘린더 연동하기" → 허용. 처음 설치할 때 "출처를 알 수 없는 앱 허용"을 물어보면 허용해 주세요.</p>`;
+  } else if (ANDROID_APP) {
     if (typeof DevCal === 'undefined' || !DevCal.available) s = '<p class="m-muted">안드로이드 앱을 새 버전(1.3.0 이상)으로 업데이트하면 삼성 캘린더와 연동할 수 있어요.</p>';
     else {
       const d = DevCal.status();
@@ -1331,7 +1335,7 @@ function changelogCardHTML() {
   const ver = (APP_VERSION || '').split('-')[0];
   const list = changelogRecent(MY_PLATFORM, ver);
   return `<div class="m-card m-pad m-clog" id="mChangelog"><b class="m-clog-h">업데이트 내역</b>
-    ${list.map((e) => `<details open><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : '<span class="m-clog-prev">이전 버전</span>'}<span class="m-muted">${esc(e.date || '')}</span></summary>
+    ${list.map((e, i) => `<details open><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : i === 0 ? '<span class="m-clog-now">최근 변경</span>' : '<span class="m-clog-prev">이전 버전</span>'}<span class="m-muted">${esc(e.date || '')}</span></summary>
       <ul>${e.items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>`).join('')}</div>`;
 }
 
