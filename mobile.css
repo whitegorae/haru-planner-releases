@@ -199,7 +199,6 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px; border-radius: 22px; text-align: left; min-width: 0;
   background: var(--panel); box-shadow: var(--shadow-soft); border-top: 4px solid var(--c);
 }
-.m-dd.past { opacity: .6; }
 .m-dd.is-today { box-shadow: 0 0 0 3px var(--c), var(--shadow-soft); }
 .m-dd-l { font-size: calc(30 * var(--u)); color: var(--c); line-height: 1.1; }
 .m-dd-t { font-size: 17px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

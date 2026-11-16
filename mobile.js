@@ -268,6 +268,7 @@ const TABS = [
 
 function render() {
   if (!state.data) return;
+  syncWidget();
   const app = $('#app');
   if (!app.querySelector('.m-tabs')) {
     app.innerHTML = `<main id="view" class="m-view"></main>
@@ -375,7 +376,7 @@ function viewToday() {
   const over = sortTasks(open.filter((x) => x.dueDate && taskEnd(x) < t));
   const today = sortTasks(open.filter((x) => x.dueDate && x.dueDate <= t && taskEnd(x) >= t));
   const doneToday = sortTasks(state.data.tasks.filter((x) => x.done && x.doneAt && ymd(new Date(x.doneAt)) === t));
-  const nd = state.data.ddays.map((x) => ({ x, ...ddayInfo(x.date) })).filter((o) => o.diff >= 0).sort((a, b) => a.diff - b.diff)[0];
+  const nd = state.data.ddays.map((x) => ({ x, ...ddayInfo(x.date, x.style) })).filter((o) => o.diff >= 0).sort((a, b) => a.diff - b.diff)[0];
   const hol = holidayOf(t);
   return `${head('오늘', `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS[d.getDay()]}요일${hol ? ` · ${esc(hol)}` : ''}`)}
     ${nd ? `<button class="m-dday-strip" data-a="tab" data-k="dday" style="--c:${esc(ddColor(nd.x))}"><b>${nd.label}</b><span>${esc(nd.x.title)}</span>${icon('chevR')}</button>` : ''}
@@ -476,7 +477,7 @@ function viewLists() {
 
 // ---- 디데이 ----
 function viewDday() {
-  const items = state.data.ddays.map((x) => ({ x, ...ddayInfo(x.date) }))
+  const items = state.data.ddays.map((x) => ({ x, ...ddayInfo(x.date, x.style) }))
     .sort((a, b) => (a.diff < 0) - (b.diff < 0) || (a.diff >= 0 ? a.diff - b.diff : b.diff - a.diff));
   const d = (s) => { const x = parseYmd(s); return `${x.getFullYear()}년 ${x.getMonth() + 1}월 ${x.getDate()}일 (${WEEKDAYS[x.getDay()]})`; };
   return `${head('디데이', '기다리는 날까지 며칠 남았는지')}
@@ -736,11 +737,12 @@ let pickHandler = null;
 let ddDraft = null;
 function ddSheetHTML() {
   const x = ddDraft;
-  const info = x.date ? ddayInfo(x.date) : null;
+  const info = x.date ? ddayInfo(x.date, x.style) : null;
   return `<div class="m-ddsheet">
     <h3>${x.id ? '디데이 고치기' : '디데이 추가'}</h3>
     <input id="ddTitle" class="m-input" placeholder="이름 (예: 시험, 여행, 생일)" value="${esc(x.title)}" autocomplete="off" enterkeyhint="done">
     <label class="m-dp-row">${icon('calendar')}<span>날짜</span><span class="flex1"></span><input type="date" id="ddDate" value="${x.date}"></label>
+    <div class="m-dp-row m-dd-style">${icon('dday')}<span>지난 날</span><span class="flex1"></span><div class="m-seg">${DDAY_STYLES.map((o) => `<button class="${x.style === o.v ? 'on' : ''}" data-a="dd-style" data-v="${o.v}">${o.label}</button>`).join('')}</div></div>
     <div class="m-swatches"><button class="m-sw list ${x.color ? '' : 'on'}" style="--c:${esc(ddColor(null))}" data-a="dd-color" data-v="">기본</button>${PRESET_COLORS.map((c) => `<button class="m-sw ${x.color === c ? 'on' : ''}" style="--c:${c}" data-a="dd-color" data-v="${c}"></button>`).join('')}</div>
     ${info ? `<div class="m-dd-prev" style="--c:${esc(x.color || ddColor(null))}"><b>${info.label}</b><span>${info.sub}</span></div>` : ''}
     <div class="m-dp-foot">${x.id ? `<button class="m-btn danger" data-a="dd-delete">${icon('trash')}삭제</button>` : '<button class="m-btn" data-a="dd-cancel">취소</button>'}<button class="m-btn primary" data-a="dd-save">${x.id ? '저장' : '추가'}</button></div>
@@ -748,7 +750,7 @@ function ddSheetHTML() {
 }
 function openDdaySheet(x) {
   if (!canEdit()) return;
-  ddDraft = x ? { id: x.id, title: x.title, date: x.date, color: x.color || null } : { id: null, title: '', date: addDays(todayStr(), 30), color: null };
+  ddDraft = x ? { id: x.id, title: x.title, date: x.date, color: x.color || null, style: x.style === 'plus' ? 'plus' : 'nth' } : { id: null, title: '', date: addDays(todayStr(), 30), color: null, style: 'plus' };
   openSheet(ddSheetHTML(), { cls: 'ddsheet', onMount: (el) => { if (!x) setTimeout(() => $('#ddTitle', el).focus(), 60); } });
 }
 function refreshDdSheet() {
@@ -815,17 +817,18 @@ document.addEventListener('click', (e) => {
     // 디데이
     case 'dd-open': openDdaySheet(state.data.ddays.find((x) => x.id === id)); break;
     case 'dd-color': ddDraft.color = el.dataset.v || null; refreshDdSheet(); break;
+    case 'dd-style': ddDraft.style = el.dataset.v; ddDraft.date = $('#ddDate').value || ddDraft.date; refreshDdSheet(); break;
     case 'dd-cancel': closeSheet(); break;
     case 'dd-save': {
       const title = $('#ddTitle').value.trim();
       const date = $('#ddDate').value;
       if (!title) { toast('이름을 적어 주세요'); $('#ddTitle').focus(); break; }
       if (!date) { toast('날짜를 골라 주세요'); break; }
-      if (ddDraft.id) Object.assign(state.data.ddays.find((x) => x.id === ddDraft.id) || {}, { title, date, color: ddDraft.color });
-      else state.data.ddays.push({ id: uid(), title, date, color: ddDraft.color, pinned: false });
+      if (ddDraft.id) Object.assign(state.data.ddays.find((x) => x.id === ddDraft.id) || {}, { title, date, color: ddDraft.color, style: ddDraft.style });
+      else state.data.ddays.push({ id: uid(), title, date, color: ddDraft.color, style: ddDraft.style, pinned: false });
       closeSheet({ silent: true });
       commit();
-      toast(`"${title}" ${ddayInfo(date).label}`);
+      toast(`"${title}" ${ddayInfo(date, ddDraft.style).label}`);
       break;
     }
     case 'dd-delete': {
@@ -848,7 +851,7 @@ document.addEventListener('click', (e) => {
     case 'resync': if (Cloud.isActive()) { Cloud.resync(); toast('서버와 다시 맞추는 중이에요'); } else startCloud(); break;
     case 'logout':
       if (!confirm('로그아웃할까요? 이 폰에 저장된 일정 사본도 지워져요.')) break;
-      Cloud.signOut().then(() => { try { localStorage.removeItem(CACHE_KEY); } catch (_) { /* 무시 */ } state.data = null; loginScreen(); });
+      Cloud.signOut().then(() => { try { localStorage.removeItem(CACHE_KEY); } catch (_) { /* 무시 */ } state.data = null; widgetSignedOut(); loginScreen(); });
       break;
     case 'go-login': location.href = location.pathname; break;
     // 시트
@@ -1096,6 +1099,7 @@ async function startCloud() {
   applyTheme();
   render();
   saveCacheSoon();
+  widgetInbox();
 }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-a="retry-boot"]')) startCloud(); });
 Cloud.onStatus(() => { if (state.data) { const s = $('.m-sync'); if (s) s.outerHTML = syncDot(); if (state.tab === 'settings') render(); } });
@@ -1165,6 +1169,68 @@ async function checkApk() {
     toast(`안드로이드 앱 새 버전 ${apkInfo.version} 이 나왔어요`, { action: '받기', timeout: 30000, onAction: () => { location.href = apkInfo.apk; } });
   }
 }
+
+// ---------- 안드로이드 홈 화면 위젯 (APK 1.1.0 부터) ----------
+// 앱이 앞으로 7일치 할 일과 테마 색을 위젯에 넘겨요. 위젯에서 체크한 건 앱을 열 때 여기서 진짜로 저장해요.
+const HaruWidget = (() => {
+  const C = window.Capacitor;
+  if (!C || !ANDROID_APP) return null;
+  const has = (C.isPluginAvailable && C.isPluginAvailable('HaruWidget')) || (Array.isArray(C.PluginHeaders) && C.PluginHeaders.some((h) => h.name === 'HaruWidget'));
+  if (!has) return null; // 위젯이 없는 예전 APK
+  const call = (method, opts = {}) => {
+    const p = C.Plugins && C.Plugins.HaruWidget;
+    if (p && typeof p[method] === 'function') return p[method](opts);
+    if (typeof C.nativePromise === 'function') return C.nativePromise('HaruWidget', method, opts);
+    return Promise.reject(new Error('no bridge'));
+  };
+  return { update: (o) => call('update', o), takePending: () => call('takePending') };
+})();
+let widgetLast = '';
+let widgetT = 0;
+function widgetPayload() {
+  const t = todayStr();
+  const lim = addDays(t, 7);
+  const v = themeVars(S().accent || DEFAULT_ACCENT, document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+  const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : v.accent);
+  const items = state.data.tasks
+    .filter((x) => x.dueDate && x.dueDate <= lim && !(x.done && taskEnd(x) < t))
+    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0))
+    .slice(0, 150)
+    .map((x) => ({ id: x.id, title: x.title, date: x.dueDate, end: taskEnd(x), hm: x.dueTime || '', time: x.dueTime ? timeLabel(x.dueTime) : '', done: !!x.done, prio: x.priority || 0, color: hex(taskColor(x)) }));
+  return { signedIn: true, items, theme: { panel: v.panel, text: v.text, sub: v['text-2'], faint: v['text-3'], accent: v.accent } };
+}
+function syncWidget() {
+  if (!HaruWidget || DEMO) return;
+  clearTimeout(widgetT);
+  widgetT = setTimeout(() => {
+    if (!state.data) return;
+    let json;
+    try { json = JSON.stringify(widgetPayload()); } catch (_) { return; }
+    if (json === widgetLast) return;
+    widgetLast = json;
+    HaruWidget.update({ json }).catch(() => { widgetLast = ''; });
+  }, 500);
+}
+function widgetSignedOut() { // 로그아웃하면 위젯에서도 할 일을 지워요
+  if (!HaruWidget) return;
+  widgetLast = '';
+  HaruWidget.update({ json: JSON.stringify({ signedIn: false, items: [] }) }).catch(() => {});
+}
+async function widgetInbox() {
+  if (!HaruWidget || DEMO || !state.data || state.offline) return;
+  let r;
+  try { r = await HaruWidget.takePending(); } catch (_) { return; }
+  let toggles = {};
+  try { toggles = JSON.parse((r && r.toggles) || '{}'); } catch (_) { toggles = {}; }
+  for (const [id, done] of Object.entries(toggles)) { const x = taskById(id); if (x && !!x.done !== !!done) toggleDone(id); }
+  const a = (r && r.action) || '';
+  if (a) { state.tab = a === 'calendar' ? 'calendar' : 'today'; state.listView = null; render(); }
+  if (a === 'add') openTaskSheet('add', { date: todayStr() });
+  else if (a.startsWith('open:') && taskById(a.slice(5))) openTaskSheet('edit', { id: a.slice(5) });
+  widgetLast = '';
+  syncWidget();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(widgetInbox, 250); });
 
 async function boot() {
   applyTheme();

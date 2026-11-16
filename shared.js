@@ -19,16 +19,24 @@ const fromEpochDays = (n) => { const d = new Date(n * DAY_MS); return `${d.getUT
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 디데이: 앞으로 남은 날은 D-n, 지난 날은 한국식 기념일 계산 (시작한 날 = 1일, 카카오톡과 같아요)
 //   예) 2026-01-01 시작 → 1월 1일 "1일", 1월 2일 "2일", 100일째 = 4월 10일
-function ddayInfo(date) {
+// style: 지난 날을 세는 방법 — 'plus' = D+n (지난 날 수, 다음 날 D+1) | 그 밖 = n일 (시작한 날 = 1일)
+function ddayInfo(date, style) {
   const diff = diffDays(date, todayStr());
   const nth = 1 - diff; // 지난 날이면 오늘이 며칠째인지 (당일 = 1일)
+  const past = -diff;
+  const plus = style === 'plus';
+  const n = (v) => v.toLocaleString('ko-KR');
   return {
     diff,
     nth,
-    label: diff > 0 ? `D-${diff}` : diff === 0 ? 'D-DAY' : `${nth.toLocaleString('ko-KR')}일`,
-    sub: diff > 0 ? `${diff}일 남았어요` : diff === 0 ? '바로 오늘이에요! (1일째)' : `${nth.toLocaleString('ko-KR')}일째예요`,
+    plus,
+    big: diff > 0 ? n(diff) : diff === 0 ? 'D-DAY' : plus ? `+${n(past)}` : n(nth), // 위젯의 큰 숫자
+    unit: diff > 0 ? '일 남음' : diff === 0 ? '바로 오늘이에요!' : plus ? '일 지남' : '일째',
+    label: diff > 0 ? `D-${diff}` : diff === 0 ? 'D-DAY' : plus ? `D+${n(past)}` : `${n(nth)}일`,
+    sub: diff > 0 ? `${diff}일 남았어요` : diff === 0 ? '바로 오늘이에요! (1일째)' : plus ? `${n(past)}일 지났어요 · ${n(nth)}일째` : `${n(nth)}일째예요`,
   };
 }
+const DDAY_STYLES = [{ v: 'plus', label: 'D+숫자', hint: '지난 날 수 (다음 날 = D+1)' }, { v: 'nth', label: 'N일째', hint: '시작한 날 = 1일 (기념일 세기)' }];
 
 // 디데이 색: 디데이마다 따로 고른 색 → (설정이 '직접 고르기'면) 디데이 기본 색 → 메인 색
 function ddayColor(x, settings) {
