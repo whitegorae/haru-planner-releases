@@ -93,9 +93,28 @@ const DevCal = (() => {
     return st.granted;
   }
   async function loadCalendars() {
-    try { st.calendars = ((await call('calendars')).calendars || []).map((c) => ({ ...c, google: /google/i.test(c.accountType || '') })); } catch (e) { st.error = e.message; }
+    try {
+      st.calendars = ((await call('calendars')).calendars || []).map((c) => ({
+        ...c,
+        google: /google/i.test(c.accountType || ''),
+        holiday: /공휴일|휴일|holiday|기념일|생일|birthday|날씨|weather|음력/i.test(`${c.name || ''} ${c.account || ''} ${c.accountType || ''}`),
+      }));
+    } catch (e) { st.error = e.message; }
     emit();
     return st.calendars || [];
+  }
+  // 구글 서버 연동(CalSync)을 켰으면 폰의 구글 계정 캘린더는 그쪽이 맡아요 (두 번 생기지 않게)
+  const serverGoogle = () => typeof CalSync !== 'undefined' && !!(CalSync.status() && CalSync.status().link);
+  // 기본으로 맞출 캘린더: 쓰기 가능한 내 캘린더 (공휴일 · 생일처럼 읽기 전용은 빼요. 하루플래너가 공휴일을 따로 보여줘요)
+  const usable = (c) => c.writable && !c.holiday && c.visible !== false && (!c.google || !serverGoogle());
+  function pickTarget(cals) {
+    const w = cals.filter(usable);
+    const pick = w.find((c) => /samsung|osp/i.test(c.accountType || '')) || w.find((c) => /local/i.test(c.accountType || '')) || w.find((c) => !c.google) || w[0];
+    return pick ? pick.id : null;
+  }
+  function applyDefaults(cals) {
+    cfg.calIds = cals.filter(usable).map((c) => c.id);
+    if (!cfg.target || !cals.some((c) => c.id === cfg.target && usable(c))) cfg.target = pickTarget(cals);
   }
 
   async function sync() {
@@ -110,16 +129,29 @@ const DevCal = (() => {
     try {
       cfg.map = cfg.map || {};
       const map = cfg.map;
+      const cals = st.calendars || await loadCalendars();
+      const calOf = new Map(cals.map((c) => [c.id, c]));
+      // 예전 설정(공휴일까지 다 고르고 구글은 빼던 것) → 새 기본값으로 한 번 바꿔요
+      if (cfg.v !== 2 && cals.length) { applyDefaults(cals); cfg.v = 2; }
+      // 구글 서버 연동을 켰으면 폰의 구글 캘린더는 빼요 (서버가 같은 일정을 이어 붙여요)
+      if (serverGoogle()) {
+        cfg.calIds = (cfg.calIds || []).filter((id) => !(calOf.get(id) || {}).google);
+        if ((calOf.get(cfg.target) || {}).google) cfg.target = pickTarget(cals);
+      }
       const ids = [...new Set([...(cfg.calIds || []), cfg.target].filter(Boolean))];
       const today = todayStr();
       const minDate = addDays(today, -PAST);
       const { events = [] } = await call('events', { calIds: ids, from: localMs(minDate, null), to: localMs(addDays(today, FUTURE), null) });
       const seen = new Set();
+      let skippedRepeat = 0;
+      let pulledNow = 0;
+      let pushedNow = 0;
 
       // 1) 폰 캘린더 → 하루플래너
       for (const ev of events) {
-        if (ev.rrule) continue; // 반복 일정은 건너뛰어요
+        if (ev.rrule) { skippedRepeat++; continue; } // 반복 일정은 건너뛰어요
         seen.add(ev.id);
+        if (map[ev.id]) map[ev.id].calId = ev.calId;
         const fp = fpOf(ev);
         const m = map[ev.id];
         let t = m ? taskById(m.tid) : null;
@@ -130,7 +162,7 @@ const DevCal = (() => {
           const key = `${f.title.trim().toLowerCase()}|${f.dueDate}|${f.dueTime || ''}`;
           const linkedTids = new Set(Object.values(map).map((x) => x.tid));
           const same = state.data.tasks.find((x) => !linkedTids.has(x.id) && x.dueDate && `${String(x.title || '').trim().toLowerCase()}|${x.dueDate}|${x.dueTime || ''}` === key);
-          if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false }; continue; }
+          if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false, calId: ev.calId, src: 'link' }; continue; }
         }
         // 양쪽에서 다 고쳤으면 하루플래너 쪽을 남겨요 (폰 캘린더는 고친 시각을 알려주지 않아서) → 2) 에서 폰 일정을 고쳐요
         if (m && t && hashOf(t) !== m.h) { m.fp = fp; continue; }
@@ -142,14 +174,27 @@ const DevCal = (() => {
           if (t.dueDate !== f.dueDate || t.dueTime !== f.dueTime) t.reminded = null;
           Object.assign(t, f);
         }
-        map[ev.id] = { tid: t.id, fp, h: hashOf(t), noEnd: !!(m && m.noEnd && !t.endTime && t.dueTime) };
+        map[ev.id] = { tid: t.id, fp, h: hashOf(t), noEnd: !!(m && m.noEnd && !t.endTime && t.dueTime), calId: ev.calId, src: (m && m.src) || 'dev' };
         changed = true;
+        pulledNow++;
       }
       // 폰에서 지운 일정 (안 보이는 것만 따로 확인해요: 기간 밖으로 옮긴 건 지우지 않아요)
       const missing = Object.keys(map).filter((id) => !seen.has(id));
       if (missing.length) {
         const { events: alive = [] } = await call('existing', { ids: missing });
         const still = new Set(alive.map((e) => e.id));
+        for (const e of alive) if (map[e.id]) map[e.id].calId = e.calId;
+        // 고르지 않은 캘린더의 일정 정리: 폰에서 가져온 건(안 고친 것만) 하루플래너에서 빼고, 하루플래너가 넣은 건 폰에서 빼요
+        for (const e of alive) {
+          const m = map[e.id];
+          if (!m || ids.includes(e.calId)) continue;
+          const c = calOf.get(e.calId) || {};
+          const t = taskById(m.tid);
+          const handOver = c.google && serverGoogle(); // 구글 서버 연동이 넘겨받아요 → 할 일 · 폰 일정 모두 그대로 두고 연결만 끊어요
+          if (handOver) { /* 그대로 */ } else if (m.src === 'haru') await call('remove', { id: e.id }).catch(() => {});
+          else if (m.src !== 'link' && t && hashOf(t) === m.h) { state.data.tasks = state.data.tasks.filter((x) => x !== t); changed = true; }
+          delete map[e.id];
+        }
         const gone = missing.filter((id) => !still.has(id));
         if (gone.length > 50 && gone.length > Object.keys(map).length * 0.5) st.warn = `폰 캘린더에서 일정 ${gone.length}개가 한꺼번에 사라져서, 안전을 위해 할 일은 지우지 않았어요.`;
         else {
@@ -172,11 +217,18 @@ const DevCal = (() => {
           const h = hashOf(t);
           if (m && m.h === h) continue;
           const e = eventOf(t);
-          const r = await call('upsert', { id: eid || null, calId: cfg.target, title: e.title, notes: e.notes, start: e.start, end: e.end, allDay: e.allDay });
+          const r = await call('upsert', { id: eid || null, calId: (m && m.calId) || cfg.target, title: e.title, notes: e.notes, start: e.start, end: e.end, allDay: e.allDay });
           if (eid && r.id !== eid) delete map[eid];
-          map[r.id] = { tid: t.id, fp: fpOf(e), h, noEnd: e.noEnd };
+          map[r.id] = { tid: t.id, fp: fpOf(e), h, noEnd: e.noEnd, calId: (m && m.calId) || cfg.target, src: (m && m.src) || 'haru' };
+          pushedNow++;
         }
       }
+      if (cfg.push !== false && !cfg.target) st.warn = '할 일을 넣을 수 있는 폰 캘린더가 없어요. 아래에서 "할 일을 넣을 캘린더"를 골라 주세요.';
+      // 상태 보여주기용: 연결된 일정 수 + 이번에 가져온 · 보낸 수 (누적은 앱을 연 뒤부터)
+      st.total = st.total || { pulled: 0, pushed: 0 };
+      st.total.pulled += pulledNow;
+      st.total.pushed += pushedNow;
+      st.counts = { linked: Object.keys(map).length, pulledNow, pushedNow, pulledTotal: st.total.pulled, pushedTotal: st.total.pushed, skippedRepeat };
       // 3) 하루플래너에서 지운 할 일 → 폰에서도 지우기
       for (const [eid, m] of Object.entries(map)) {
         if (taskById(m.tid)) continue;
@@ -228,13 +280,9 @@ const DevCal = (() => {
     st.granted = !!(r && r.granted);
     if (!st.granted) { st.error = '캘린더 접근을 허용해야 연동할 수 있어요'; emit(); return false; }
     const cals = await loadCalendars();
-    const mine = cals.filter((c) => !c.google && c.visible !== false);
-    const writable = mine.filter((c) => c.writable);
-    if (!cfg.calIds || !cfg.calIds.length) cfg.calIds = mine.map((c) => c.id);
-    if (!cfg.target || !writable.some((c) => c.id === cfg.target)) {
-      const pick = writable.find((c) => /samsung|osp/i.test(c.accountType || '')) || writable.find((c) => /local/i.test(c.accountType || '')) || writable[0];
-      cfg.target = pick ? pick.id : null;
-    }
+    if (!cfg.calIds || !cfg.calIds.length || cfg.v !== 2) applyDefaults(cals);
+    else if (!cfg.target) cfg.target = pickTarget(cals);
+    cfg.v = 2;
     if (!cfg.listId) cfg.listId = 'inbox';
     cfg.on = true;
     saveCfg();
@@ -258,6 +306,7 @@ const DevCal = (() => {
     available,
     status: () => st,
     config: () => cfg,
+    serverGoogle,
     onStatus: (f) => { listeners.add(f); return () => listeners.delete(f); },
     start, enable, disable, sync, schedule, loadCalendars, setCals, setTarget, setPush, setList,
     _fieldsOf: fieldsOf, _eventOf: eventOf, // 시험용

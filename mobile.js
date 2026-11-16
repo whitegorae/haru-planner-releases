@@ -1303,11 +1303,16 @@ function calCardsHTML() {
         s = `<button class="m-btn primary" data-a="dc-enable">삼성 캘린더 연동하기</button>
           <p class="m-muted">누르면 "캘린더 허용"을 물어봐요. <b>허용</b>만 누르면 끝이에요.</p>`;
       } else {
-        const cals = (d.calendars || []).filter((x) => !x.google);
-        const writable = cals.filter((x) => x.writable);
+        const sg = DevCal.serverGoogle();
+        const cals = (d.calendars || []).filter((x) => !(x.google && sg) && x.visible !== false);
+        const writable = cals.filter((x) => x.writable && !x.holiday);
+        const tag = (x) => `${x.google ? '<i class="m-cal-tag">구글</i>' : ''}${x.holiday ? '<i class="m-cal-tag">공휴일·기념일</i>' : !x.writable ? '<i class="m-cal-tag">읽기 전용</i>' : ''}`;
+        const c = d.counts;
         s = `<p class="m-muted">맞출 폰 캘린더</p>
-          <div class="m-checks">${cals.map((x) => `<label><input type="checkbox" data-dc="cal" value="${esc(x.id)}" ${(cfg.calIds || []).includes(x.id) ? 'checked' : ''}><span class="m-dot" style="background:${esc(x.color || '#999')}"></span>${esc(x.name || x.account || '캘린더')}</label>`).join('') || '<span class="m-muted">구글이 아닌 캘린더가 없어요</span>'}</div>
-          <div class="m-set"><span>할 일을 넣을 캘린더</span><select id="mDcTarget" class="m-select">${writable.map((x) => `<option value="${esc(x.id)}" ${x.id === cfg.target ? 'selected' : ''}>${esc(x.name || x.account)}</option>`).join('')}</select></div>
+          <div class="m-checks">${cals.map((x) => `<label><input type="checkbox" data-dc="cal" value="${esc(x.id)}" ${(cfg.calIds || []).includes(x.id) ? 'checked' : ''}><span class="m-dot" style="background:${esc(x.color || '#999')}"></span><span class="m-cal-name">${esc(x.name || x.account || '캘린더')}</span>${tag(x)}</label>`).join('') || '<span class="m-muted">폰에 캘린더가 없어요</span>'}</div>
+          <p class="m-muted small">공휴일은 하루플래너가 따로 보여줘서 기본으로 빼 뒀어요.</p>
+          <div class="m-set"><span>할 일을 넣을 캘린더</span><select id="mDcTarget" class="m-select">${writable.length ? '' : '<option value="">(쓸 수 있는 캘린더 없음)</option>'}${writable.map((x) => `<option value="${esc(x.id)}" ${x.id === cfg.target ? 'selected' : ''}>${esc(x.name || x.account)}${x.google ? ' (구글)' : ''}</option>`).join('')}</select></div>
+          ${c ? `<p class="m-dc-count">폰 캘린더와 연결된 일정 <b>${c.linked}</b>개<br><span>앱을 연 뒤로 폰에서 가져온 것 ${c.pulledTotal}개 · 폰으로 보낸 것 ${c.pushedTotal}개${c.skippedRepeat ? ` · 반복 일정 ${c.skippedRepeat}개는 아직 가져오지 않아요` : ''}</span></p>` : ''}
           <div class="m-set"><span>가져온 일정 목록</span><select id="mDcList" class="m-select">${opts(cfg.listId || 'inbox')}</select></div>
           <label class="m-set"><span>하루플래너 할 일을 폰 캘린더로 보내기</span><input type="checkbox" id="mDcPush" ${cfg.push !== false ? 'checked' : ''}></label>
           <p class="m-muted">${d.busy ? '맞추는 중…' : d.lastAt ? `마지막 ${time(d.lastAt)} · 앱이 켜져 있는 동안 바로바로 맞춰요` : ''}</p>
@@ -1319,7 +1324,7 @@ function calCardsHTML() {
   return `<div id="mCalCards"><div class="m-card m-pad m-cal"><b class="m-clog-h">구글 캘린더</b>${g}
       <p class="m-muted small">서버에서 돌아가서 폰 · PC 가 꺼져 있어도 1분 안에 맞춰져요.</p></div>
     ${s ? `<div class="m-card m-pad m-cal"><b class="m-clog-h">삼성 캘린더 · 폰 캘린더</b>${s}
-      <p class="m-muted small">구글 계정 캘린더는 위 "구글 캘린더" 연동이 맡아요 (두 번 생기지 않게 여기서는 빼요).</p></div>` : ''}</div>`;
+      <p class="m-muted small">${typeof DevCal !== 'undefined' && DevCal.available && DevCal.serverGoogle() ? '구글 계정 캘린더는 위 "구글 캘린더" 연동이 맡아요 (두 번 생기지 않게 여기서는 빼요).' : '구글 서버 연동을 켜기 전까지는 폰에 있는 구글 계정 캘린더도 여기서 맞춰요.'}</p></div>` : ''}</div>`;
 }
 // 업데이트 뒤 처음 열면 무엇이 바뀌었는지 알려줘요
 const MY_PLATFORM = ANDROID_APP ? 'android' : 'phone';
