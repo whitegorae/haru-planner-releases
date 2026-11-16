@@ -326,7 +326,8 @@ const Cloud = (() => {
   async function fetchTable(table, cols) {
     const rows = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await client.from(table).select(cols).range(from, from + 999);
+      // 서버 규칙(RLS)과 별개로, 앱도 로그인한 사람의 줄만 달라고 해요 (계정끼리 절대 안 섞이게)
+      const { data, error } = await client.from(table).select(`user_id,${cols}`).eq('user_id', user.id).range(from, from + 999);
       if (error) throw error;
       rows.push(...data);
       if (data.length < 1000) break;
@@ -338,7 +339,8 @@ const Cloud = (() => {
       fetchTable(EVENTS, 'id,client_id,title,start_at,end_at,created_at,details'),
       fetchTable(META, 'kind,id,data'),
     ]);
-    return [...ev.map(eventRow), ...meta.map((r) => ({ kind: r.kind, id: r.id, data: r.data }))];
+    const own = (r) => r.user_id === user.id;
+    return [...ev.filter(own).map(eventRow), ...meta.filter(own).map((r) => ({ kind: r.kind, id: r.id, data: r.data }))];
   }
 
   // ---------- 실시간 받기 ----------
@@ -367,30 +369,40 @@ const Cloud = (() => {
     removeFrom(getData(), k.slice(0, i), k.slice(i + 1));
     onRemote();
   }
+  // 다른 계정의 변경이면 무시해요 (설정 · 타이머처럼 id 가 모두 같은 항목이 섞이지 않게)
+  const isMine = (row) => !!(row && user && row.user_id === user.id);
+  const notOthers = (row) => !(row && row.user_id && user && row.user_id !== user.id);
   function onEvents(p) {
     if (!active) return;
     if (p.eventType === 'DELETE') {
       const o = p.old || {};
+      if (!notOthers(o)) return;
       const k = (o.id != null && keyOfSid.get(String(o.id))) || (o.client_id ? `task:${o.client_id}` : null);
       if (k) removeIncoming(k);
       return;
     }
-    if (p.new && p.new.id != null) applyIncoming(eventRow(p.new), false);
+    if (p.new && p.new.id != null && isMine(p.new)) applyIncoming(eventRow(p.new), false);
   }
   function onMeta(p) {
     if (!active) return;
     if (p.eventType === 'DELETE') {
       const o = p.old || {};
-      if (o.kind && o.id) removeIncoming(`${o.kind}:${o.id}`);
+      if (o.kind && o.id && notOthers(o)) removeIncoming(`${o.kind}:${o.id}`);
       return;
     }
-    if (p.new && p.new.kind) applyIncoming({ kind: p.new.kind, id: p.new.id, data: p.new.data }, false);
+    if (p.new && p.new.kind && isMine(p.new)) applyIncoming({ kind: p.new.kind, id: p.new.id, data: p.new.data }, false);
   }
   function subscribe() {
     if (unsub) unsub();
-    const ch = client.channel('haru-planner-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: EVENTS }, onEvents)
-      .on('postgres_changes', { event: '*', schema: 'public', table: META }, onMeta)
+    // 내 줄만 받도록 user_id 로 걸러요 (지우기 알림은 서버가 거를 수 없어서 위 onEvents/onMeta 에서 한 번 더 확인)
+    const mineFilter = `user_id=eq.${user.id}`;
+    const ch = client.channel(`haru-planner-sync-${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: EVENTS, filter: mineFilter }, onEvents)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: EVENTS, filter: mineFilter }, onEvents)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: EVENTS }, onEvents)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: META, filter: mineFilter }, onMeta)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: META, filter: mineFilter }, onMeta)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: META }, onMeta)
       .subscribe((s) => {
         if (s === 'SUBSCRIBED') {
           if (status !== 'syncing') setStatus('online');
@@ -444,7 +456,7 @@ const Cloud = (() => {
       const byId = tasks.filter((u) => noCid.has(u.k) && sidOf.has(u.k));
       const byCid = tasks.filter((u) => !byId.includes(u));
       for (const u of byId) {
-        const { error } = await client.from(EVENTS).update(u.row).eq('id', sidOf.get(u.k));
+        const { error } = await client.from(EVENTS).update(u.row).eq('id', sidOf.get(u.k)).eq('user_id', user.id);
         if (error) throw error;
         noCid.delete(u.k);
         synced.set(u.k, u.s);
@@ -469,13 +481,13 @@ const Cloud = (() => {
       const cids = delTasks.filter((k) => !sidOf.has(k)).map((k) => k.slice(5));
       for (let i = 0; i < sids.length; i += 200) {
         const part = sids.slice(i, i + 200);
-        const { error } = await client.from(EVENTS).delete().in('id', part.map((k) => sidOf.get(k)));
+        const { error } = await client.from(EVENTS).delete().eq('user_id', user.id).in('id', part.map((k) => sidOf.get(k)));
         if (error) throw error;
         part.forEach((k) => { synced.delete(k); ver.delete(k); forget(k); });
       }
       for (let i = 0; i < cids.length; i += 200) {
         const part = cids.slice(i, i + 200);
-        const { error } = await client.from(EVENTS).delete().in('client_id', part);
+        const { error } = await client.from(EVENTS).delete().eq('user_id', user.id).in('client_id', part);
         if (error) throw error;
         part.forEach((id) => { synced.delete(`task:${id}`); ver.delete(`task:${id}`); });
       }
@@ -489,7 +501,7 @@ const Cloud = (() => {
       for (const [kind, ids] of byKind) {
         for (let i = 0; i < ids.length; i += 200) {
           const part = ids.slice(i, i + 200);
-          const { error } = await client.from(META).delete().eq('kind', kind).in('id', part);
+          const { error } = await client.from(META).delete().eq('user_id', user.id).eq('kind', kind).in('id', part);
           if (error) throw error;
           part.forEach((id) => { synced.delete(`${kind}:${id}`); ver.delete(`${kind}:${id}`); });
         }
