@@ -14,6 +14,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const DEMO = new URLSearchParams(location.search).has('demo');
 const APP_VERSION = (window.api && window.api.version) || '';
+const APP_BUILD = (window.api && window.api.build) || ''; // 배포할 때마다 바뀌는 빌드 번호 (설정 맨 위에 보여요)
 
 // ---------- 데스크톱과 같은 상수 ----------
 const PRIORITY = [{ v: 3, label: '높음' }, { v: 2, label: '중간' }, { v: 1, label: '낮음' }, { v: 0, label: '없음' }];
@@ -508,7 +509,7 @@ function viewSettings() {
   const st = DEMO ? null : Cloud.status();
   const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const seg = (k, opts) => `<div class="m-seg">${opts.map(([v, l]) => `<button class="${String(s[k]) === String(v) ? 'on' : ''}" data-a="set" data-k="${k}" data-v="${v}">${l}</button>`).join('')}</div>`;
-  return `${head('설정', APP_VERSION ? `HaruPlanner ${esc(APP_VERSION)}` : '')}
+  return `${head('설정', APP_VERSION ? `HaruPlanner ${esc(APP_VERSION)}${APP_BUILD ? ` · 빌드 ${esc(APP_BUILD)}` : ''}` : '')}
     <div class="m-card m-pad">
       <div class="m-acc">${icon('cloud')}<div><b>${DEMO ? '미리보기 (저장 안 됨)' : esc(user ? user.email : '')}</b>
         <span>${DEMO ? '로그인하면 데스크톱과 실시간으로 맞춰져요' : state.offline ? '오프라인 · 마지막으로 받은 일정을 보여주는 중' : st.status === 'online' ? '데스크톱과 실시간 동기화 중' : st.status === 'syncing' ? '동기화 중…' : esc(st.msg || '연결을 기다리는 중…')}</span></div></div>
@@ -538,7 +539,7 @@ function viewSettings() {
       <p class="m-muted">추가한 아이콘으로 열면 주소창 없이 앱처럼 열려요. 처음 한 번은 다시 로그인해야 할 수 있어요.</p>
     </div>`}
     <div class="m-card m-pad">
-      ${DEMO ? '<button class="m-btn primary" data-a="go-login">로그인하러 가기</button>' : `<button class="m-btn" data-a="resync">${icon('repeat')}지금 다시 맞추기</button><button class="m-btn danger" data-a="logout">로그아웃</button>`}
+      ${DEMO ? '<button class="m-btn primary" data-a="go-login">로그인하러 가기</button>' : `<button class="m-btn" data-a="resync">${icon('repeat')}지금 다시 맞추기</button><button class="m-btn" data-a="hard-reload">최신 버전으로 다시 불러오기</button><button class="m-btn danger" data-a="logout">로그아웃</button>`}
     </div>
     <p class="m-foot">알림은 데스크톱 앱에서 울려요. 모바일 웹 앱은 꺼져 있을 때 알림을 보낼 수 없어요.</p>
     <div class="m-bottom-space"></div>`;
@@ -878,6 +879,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'go-login': location.href = location.pathname; break;
     case 'apk-update': installApk(); break;
+    case 'hard-reload': hardReload(); break;
     // 캘린더 연동
     case 'cs-connect': CalSync.connect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }, 'inbox').catch((err) => toast(err.message)); break;
     case 'cs-cancel': CalSync.cancelWait(); break;
@@ -972,7 +974,7 @@ document.addEventListener('change', (e) => {
   if (t.id === 'mCsList') { CalSync.setList(t.value); return; }
   if (t.id === 'mDcTarget') { DevCal.setTarget(t.value); return; }
   if (t.id === 'mDcList') { DevCal.setList(t.value); return; }
-  if (t.id === 'mDcPast') { DevCal.setPast(t.value); return; }
+  if (t.id === 'mDcPast') { if (DevCal.setPast) DevCal.setPast(t.value); return; }
   if (t.dataset && t.dataset.dc === 'cal') { DevCal.setCals([...document.querySelectorAll('[data-dc="cal"]:checked')].map((x) => x.value)); return; }
   if (t.id === 'mDcPush') { DevCal.setPush(t.checked); return; }
   if (t.id === 'tsList' && taskSheet) { taskSheet.d.listId = t.value; applyEdit(); refreshTaskSheet(); return; }
@@ -1237,6 +1239,14 @@ async function installApk() {
   }
   location.href = url;
 }
+// 최신 버전으로 다시 불러오기: 폰에 저장해 둔 화면 파일을 지우고 서버에서 새로 받아요 (일정은 클라우드에 있어서 그대로예요)
+async function hardReload() {
+  toast('최신 버전을 받는 중이에요…', { timeout: 4000 });
+  try { if (!DEMO && Cloud.isActive()) await Cloud.flushNow(2000); } catch (_) { /* 무시 */ }
+  try { const ks = await caches.keys(); await Promise.all(ks.filter((k) => k.startsWith('haru-mobile-')).map((k) => caches.delete(k))); } catch (_) { /* 무시 */ }
+  try { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map((r) => r.unregister())); } catch (_) { /* 무시 */ }
+  location.replace(`${location.pathname}?r=${Date.now()}`);
+}
 // 웹 앱 새 버전: 버튼 없이 바꿔요. 화면을 안 보고 있으면 바로, 보고 있으면 시트 · 입력이 끝난 뒤에 새로고침해요.
 function autoReload() {
   const go = () => { const f = !DEMO && Cloud.isActive() ? Cloud.flushNow(1500) : Promise.resolve(); f.catch(() => {}).finally(() => location.reload()); };
@@ -1304,7 +1314,7 @@ function calCardsHTML() {
         s = `<button class="m-btn primary" data-a="dc-enable">삼성 캘린더 연동하기</button>
           <p class="m-muted">누르면 "캘린더 허용"을 물어봐요. <b>허용</b>만 누르면 끝이에요.</p>`;
       } else {
-        const sg = DevCal.serverGoogle();
+        const sg = typeof DevCal.serverGoogle === 'function' ? DevCal.serverGoogle() : false; // 버전이 섞여도 멈추지 않게
         const cals = (d.calendars || []).filter((x) => !(x.google && sg) && x.visible !== false);
         const writable = cals.filter((x) => x.writable && !x.holiday);
         const tag = (x) => `${x.google ? '<i class="m-cal-tag">구글</i>' : ''}${x.holiday ? '<i class="m-cal-tag">공휴일·기념일</i>' : !x.writable ? '<i class="m-cal-tag">읽기 전용</i>' : ''}`;
@@ -1326,7 +1336,7 @@ function calCardsHTML() {
   return `<div id="mCalCards"><div class="m-card m-pad m-cal"><b class="m-clog-h">구글 캘린더</b>${g}
       <p class="m-muted small">서버에서 돌아가서 폰 · PC 가 꺼져 있어도 1분 안에 맞춰져요.</p></div>
     ${s ? `<div class="m-card m-pad m-cal"><b class="m-clog-h">삼성 캘린더 · 폰 캘린더</b>${s}
-      <p class="m-muted small">${typeof DevCal !== 'undefined' && DevCal.available && DevCal.serverGoogle() ? '구글 계정 캘린더는 위 "구글 캘린더" 연동이 맡아요 (두 번 생기지 않게 여기서는 빼요).' : '구글 서버 연동을 켜기 전까지는 폰에 있는 구글 계정 캘린더도 여기서 맞춰요.'}</p></div>` : ''}</div>`;
+      <p class="m-muted small">${typeof DevCal !== 'undefined' && DevCal.available && typeof DevCal.serverGoogle === 'function' && DevCal.serverGoogle() ? '구글 계정 캘린더는 위 "구글 캘린더" 연동이 맡아요 (두 번 생기지 않게 여기서는 빼요).' : '구글 서버 연동을 켜기 전까지는 폰에 있는 구글 계정 캘린더도 여기서 맞춰요.'}</p></div>` : ''}</div>`;
 }
 // 업데이트 뒤 처음 열면 무엇이 바뀌었는지 알려줘요
 const MY_PLATFORM = ANDROID_APP ? 'android' : 'phone';
