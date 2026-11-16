@@ -25,6 +25,10 @@ const Cloud = (() => {
   const DEVICE_SETTINGS = ['zoom', 'sidebarCollapsed', 'closeToTray', 'openAtLogin', 'gcalSync', 'gcalCalendarId', 'gcalListId']; // 구글 연결은 PC 마다 따로
   const META_KINDS = { list: 'lists', dday: 'ddays', session: 'sessions', photo: 'photos', note: 'notes' }; // note: 포스트잇 // photo: 사진 일기 (파일은 Storage, 목록은 여기)
 
+  // 이 앱이 아는 데이터 종류. 예전 앱이 나중에 생긴 종류(사진 · 포스트잇 등)를 "지운 것"으로 착각해 서버에서 지우던 문제를 막아요
+  const knownKind = (r) => r && (r.kind === 'task' || (r.kind === 'meta' && (r.id === 'settings' || r.id === 'timer')) || Object.prototype.hasOwnProperty.call(META_KINDS, r.kind));
+  // 서버가 "새 앱"인지 알아보는 표시 (서버는 이 표시가 없는 요청의 사진 · 포스트잇 삭제를 무시해요 — supabase/protect.sql)
+  const SYNC_HEADER = { 'x-haru-sync': '2' };
   let client = null;
   let user = null;
   let unsub = null;
@@ -225,6 +229,7 @@ const Cloud = (() => {
     if (!window.supabase || !window.supabase.createClient) throw new Error('Supabase 라이브러리를 불러오지 못했어요');
     client = window.supabase.createClient(url.trim(), key.trim(), {
       auth: { persistSession: true, autoRefreshToken: true, storageKey: AUTH_KEY, storage: authStorage, flowType: 'pkce', detectSessionInUrl: false },
+      global: { headers: SYNC_HEADER },
     });
     return client;
   }
@@ -345,6 +350,7 @@ const Cloud = (() => {
 
   // ---------- 실시간 받기 ----------
   function applyIncoming(r, silent) {
+    if (!knownKind(r)) return false; // 모르는 종류는 받지도 지우지도 않아요
     const k = `${r.kind}:${r.id}`;
     remember(r);
     const v = Number(r.data && r.data._v) || 0;
@@ -558,6 +564,7 @@ const Cloud = (() => {
     keyOfSid.clear();
     noCid.clear();
     for (const r of rows) {
+      if (!knownKind(r)) continue; // 이 앱이 모르는 종류(나중 버전에서 생긴 데이터)는 기억하지 않아요 → 절대 지우지 않아요
       const k = `${r.kind}:${r.id}`;
       remember(r);
       synced.set(k, stable(strip(r.data)));
