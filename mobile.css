@@ -7,7 +7,7 @@
 @font-face { font-family: "Euiyeon"; src: url("fonts/Euiyeon.ttf") format("truetype"); font-display: swap; size-adjust: 125%; }
 
 :root {
-  --font-main: "Dahyun", -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --font-main: "Dahyun", "Euiyeon", -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   --font-sub: "Euiyeon", "Dahyun", -apple-system, "Apple SD Gothic Neo", sans-serif;
   --bg: #fff9f4; --bg-soft: #fff1e8; --sidebar: #fdf0e6; --panel: #ffffff; --text: #4b3f4c; --text-2: #7c6f7f; --text-3: #b3a6b2;
   --border: #f2e3da; --hover: #fdeae0; --active: #ffe2ea; --accent: #ff7d9c; --accent-2: #f2668a; --accent-soft: rgba(255, 125, 156, .14);
@@ -407,3 +407,27 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .m-checks label { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .m-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .m-muted.small { font-size: 12.5px; }
+.m-chip.danger { color: #e5556b; background: color-mix(in srgb, #e5556b 12%, var(--panel)); border: 0; height: 34px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13.5px; display: inline-flex; align-items: center; gap: 4px; }
+/* 개발자 모드 */
+.dev { padding: 20px 22px; border-radius: 26px; background: var(--panel); box-shadow: var(--shadow-soft); border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+.dev.m { padding: 16px; border-radius: 20px; margin: 0 0 14px; }
+.dev-h { display: flex; align-items: baseline; gap: 10px; }
+.dev-h b { font-weight: normal; font-size: 20px; color: var(--accent); }
+.dev-h span, .dev-sub, .dev-note, .dev-row small { font-family: var(--font-sub); color: var(--text-3); font-size: 14px; }
+.dev-sub { margin: 4px 0 12px; }
+.dev-row { margin: 10px 0; }
+.dev-row-h { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; }
+.dev-row-h b { font-weight: normal; color: var(--text-2); font-family: var(--font-sub); }
+.dev-bar { height: 10px; border-radius: 999px; background: var(--hover); overflow: hidden; margin: 6px 0 3px; }
+.dev-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.dev-bar.warn i { background: #e5556b; }
+.dev-grid { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; margin: 14px 0 6px; font-size: 15px; }
+.dev-grid span { color: var(--text-2); font-family: var(--font-sub); }
+.dev-grid b { font-weight: normal; text-align: right; }
+.dev-btn { margin-top: 8px; height: 36px; padding: 0 16px; border-radius: 999px; background: var(--hover); color: var(--text); font: inherit; font-size: 15px; border: 0; cursor: pointer; }
+.dev-log { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.dev-log summary { cursor: pointer; color: var(--text-2); font-size: 15px; padding: 4px 0; }
+.dev-v { margin: 10px 0 4px; }
+.dev-v b { font-weight: normal; font-size: 16px; }
+.dev-v span { margin-left: 8px; font-family: var(--font-sub); font-size: 13px; color: var(--text-3); }
+.dev-v ul { margin: 4px 0 0 20px; padding: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.6; }

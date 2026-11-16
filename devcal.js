@@ -126,6 +126,14 @@ const DevCal = (() => {
         if (m && m.fp === fp) continue; // 그대로
         if (!t && m) continue; // 하루플래너에서 지운 할 일 → 3) 에서 폰에서도 지워요
         const f = fieldsOf(ev, m);
+        if (!m) { // 처음 보는 폰 일정: 제목 · 날짜 · 시각이 같은 할 일이 아직 연결 안 돼 있으면 새로 만들지 않고 이어 붙여요
+          const key = `${f.title.trim().toLowerCase()}|${f.dueDate}|${f.dueTime || ''}`;
+          const linkedTids = new Set(Object.values(map).map((x) => x.tid));
+          const same = state.data.tasks.find((x) => !linkedTids.has(x.id) && x.dueDate && `${String(x.title || '').trim().toLowerCase()}|${x.dueDate}|${x.dueTime || ''}` === key);
+          if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false }; continue; }
+        }
+        // 양쪽에서 다 고쳤으면 하루플래너 쪽을 남겨요 (폰 캘린더는 고친 시각을 알려주지 않아서) → 2) 에서 폰 일정을 고쳐요
+        if (m && t && hashOf(t) !== m.h) { m.fp = fp; continue; }
         if (!t) {
           t = makeTask({ ...f, listId: state.data.lists.some((l) => l.id === cfg.listId) ? cfg.listId : 'inbox', doneAt: f.done ? Date.now() : null });
           state.data.tasks.push(t);
@@ -143,7 +151,7 @@ const DevCal = (() => {
         const { events: alive = [] } = await call('existing', { ids: missing });
         const still = new Set(alive.map((e) => e.id));
         const gone = missing.filter((id) => !still.has(id));
-        if (gone.length > 5 && gone.length > Object.keys(map).length * 0.25) st.warn = `폰 캘린더에서 일정 ${gone.length}개가 한꺼번에 사라져서, 안전을 위해 할 일은 지우지 않았어요.`;
+        if (gone.length > 50 && gone.length > Object.keys(map).length * 0.5) st.warn = `폰 캘린더에서 일정 ${gone.length}개가 한꺼번에 사라져서, 안전을 위해 할 일은 지우지 않았어요.`;
         else {
           for (const id of gone) {
             const t = taskById(map[id].tid);

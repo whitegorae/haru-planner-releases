@@ -19,7 +19,7 @@ const APP_VERSION = (window.api && window.api.version) || '';
 const PRIORITY = [{ v: 3, label: '높음' }, { v: 2, label: '중간' }, { v: 1, label: '낮음' }, { v: 0, label: '없음' }];
 const REPEATS = [
   { v: 'none', label: '반복 안 함' }, { v: 'daily', label: '매일' }, { v: 'weekdays', label: '평일마다' },
-  { v: 'weekly', label: '매주' }, { v: 'monthly', label: '매월' }, { v: 'yearly', label: '매년' },
+  { v: 'weekly', label: '매주' }, { v: 'monthly', label: '매월' }, { v: 'yearly', label: '매년' }, { v: 'yearly10', label: '매년 · 10년치 미리 추가' },
 ];
 const REMINDS = [
   { v: '', label: '알림 없음' }, { v: '0', label: '정시에' }, { v: '5', label: '5분 전' }, { v: '15', label: '15분 전' },
@@ -204,9 +204,21 @@ function addTask(fields) {
   const t = makeTask(fields);
   fixEndTime(t);
   state.data.tasks.push(t);
+  if (t.repeat === 'yearly10' && t.dueDate) { makeYearlySeries(t); setTimeout(() => toast(`앞으로 ${SERIES_YEARS}년치까지 ${SERIES_YEARS + 1}개를 추가했어요`), 50); }
+  else if (t.repeat === 'yearly10') t.repeat = 'none';
   commit();
   return t;
 }
+// 매년 반복 · 10년치 미리 추가 (모두 같은 seriesId 로 묶어서 한 번에 지울 수 있어요)
+function makeYearlySeries(t) {
+  t.repeat = 'none';
+  if (t.seriesId && state.data.tasks.some((x) => x !== t && x.seriesId === t.seriesId)) return 0;
+  t.seriesId = t.seriesId || `s-${t.id}`;
+  const copies = yearlySeriesCopies(t, uid);
+  state.data.tasks.push(...copies);
+  return copies.length;
+}
+const seriesOf = (t) => (t && t.seriesId ? state.data.tasks.filter((x) => x.seriesId === t.seriesId) : []);
 function toggleDone(id) {
   const t = taskById(id);
   if (!t || !canEdit()) return;
@@ -518,6 +530,7 @@ function viewSettings() {
     ${ANDROID_APP ? `<p class="m-foot">안드로이드 앱 ${esc(ANDROID_APP.slice(1).join('.'))}${apkInfo && apkNewer() ? ` · <button class="m-link" data-a="apk-update">새 버전 ${esc(apkInfo.version)} 설치</button>` : ''}</p>` : ''}
     ${calCardsHTML()}
     ${changelogCardHTML()}
+    ${devSlotHTML()}
     ${standalone || ANDROID_APP ? '' : `<div class="m-card m-pad m-install">
       <b>${icon('share')}홈 화면에 앱으로 추가하기</b>
       <p><b>아이폰 (Safari)</b>: 아래 공유 버튼 ${icon('share', 'mini')} → <b>홈 화면에 추가</b></p>
@@ -604,7 +617,8 @@ function taskSheetHTML() {
         <select id="tsList" aria-label="목록">${state.data.lists.map((l) => `<option value="${l.id}" ${l.id === d.listId ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
       <button class="m-icbtn" data-a="ts-colors" aria-label="색상"><span class="m-dotlg" style="background:${esc(ts.color || list.color)}"></span></button>
       <span class="flex1"></span>
-      ${t ? `<button class="m-icbtn danger" data-a="ts-delete" aria-label="삭제">${icon('trash')}</button>` : `<button class="m-send" data-a="ts-save" aria-label="추가">${icon('send')}</button>`}
+      ${t && seriesOf(t).length > 1 ? `<button class="m-chip danger" data-a="ts-delete-series">${icon('trash', 'mini')}매년 ${seriesOf(t).length}개 모두 삭제</button>` : ''}
+      ${t ? `<button class="m-icbtn danger" data-a="ts-delete" aria-label="${seriesOf(t).length > 1 ? '이 날만 삭제' : '삭제'}">${icon('trash')}</button>` : `<button class="m-send" data-a="ts-save" aria-label="추가">${icon('send')}</button>`}
     </div>
   </div>`;
 }
@@ -652,6 +666,12 @@ function applyEdit() {
   if (t.dueDate !== d.date || t.dueTime !== d.time || t.remind !== d.remind) t.reminded = null;
   Object.assign(t, { dueDate: d.date, endDate: d.endDate, dueTime: d.time, endTime: d.endTime, remind: d.date ? d.remind : null, repeat: d.date ? d.repeat || 'none' : 'none', priority: d.priority, listId: d.listId, color: taskSheet.color });
   fixEndTime(t);
+  if (t.repeat === 'yearly10') { // 고친 할 일도 10년치로 펼쳐요
+    const n = t.dueDate ? makeYearlySeries(t) : 0;
+    t.repeat = 'none';
+    d.repeat = 'none';
+    if (n) toast(`앞으로 ${SERIES_YEARS}년치까지 ${n}개를 더 추가했어요`);
+  }
   commit();
 }
 function finishEdit(ts) {
@@ -891,6 +911,16 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'ts-delete': { const tid = taskSheet.id; closeSheet({ silent: true }); taskSheet = null; deleteTask(tid); break; }
+    case 'ts-delete-series': {
+      const t0 = taskById(taskSheet.id);
+      const list = seriesOf(t0);
+      if (!t0 || list.length < 2 || !canEdit() || !confirm(`매년 반복 일정 ${list.length}개를 모두 지울까요?`)) break;
+      closeSheet({ silent: true });
+      taskSheet = null;
+      const ids = new Set(list.map((x) => x.id));
+      withUndo(`"${t0.title}" 반복 일정 ${list.length}개를 지웠어요`, () => { state.data.tasks = state.data.tasks.filter((x) => !ids.has(x.id)); });
+      break;
+    }
     // 날짜 시트
     case 'dp-quick': {
       const t = todayStr();
@@ -1215,6 +1245,18 @@ function autoReload() {
   const tryGo = () => { if (topSheet() || typing()) { setTimeout(tryGo, 2000); return; } go(); };
   setTimeout(tryGo, 2500);
 }
+// ---------- 개발자 모드 (서버가 관리자 계정이라고 확인해 줄 때만) ----------
+let devHooked = false;
+function devSlotHTML() {
+  if (DEMO || typeof DevMode === 'undefined') return '';
+  if (!devHooked) {
+    devHooked = true;
+    DevMode.onChange(() => { const s = document.getElementById('mDevSlot'); if (s && state.tab === 'settings') s.innerHTML = DevMode.html('m'); });
+  }
+  setTimeout(() => DevMode.load(), 0);
+  return `<div id="mDevSlot">${DevMode.html('m')}</div>`;
+}
+
 // ---------- 캘린더 연동 카드 (설정) ----------
 let calHooked = false;
 function calCardsHTML() {

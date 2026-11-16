@@ -16,6 +16,23 @@ const diffDays = (a, b) => Math.round((parseYmd(a) - parseYmd(b)) / DAY_MS);
 const isWeekendStr = (s) => { const w = parseYmd(s).getDay(); return w === 0 || w === 6; };
 const epochDays = (s) => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / DAY_MS); };
 const fromEpochDays = (n) => { const d = new Date(n * DAY_MS); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; };
+// n년 뒤 같은 날 (2월 29일은 윤년이 아니면 2월 28일)
+const addYearsClamp = (s, n) => {
+  const [y, m, d] = s.split('-').map(Number);
+  const last = new Date(y + n, m, 0).getDate();
+  return `${y + n}-${pad(m)}-${pad(Math.min(d, last))}`;
+};
+// 매년 반복 · 10년치 미리 추가: 첫 회차 + 앞으로 10년 (총 11개). 모두 같은 seriesId 로 묶어서 한 번에 지울 수 있어요
+const SERIES_YEARS = 10;
+function yearlySeriesCopies(base, newId) {
+  const span = base.endDate && base.endDate > base.dueDate ? diffDays(base.endDate, base.dueDate) : 0;
+  const out = [];
+  for (let k = 1; k <= SERIES_YEARS; k++) {
+    const due = addYearsClamp(base.dueDate, k);
+    out.push({ ...JSON.parse(JSON.stringify(base)), id: newId(), dueDate: due, endDate: span ? addDays(due, span) : null, done: false, doneAt: null, reminded: null, gcal: null, createdAt: Date.now(), repeat: 'none', seriesId: base.seriesId });
+  }
+  return out;
+}
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 디데이: 앞으로 남은 날은 D-n, 지난 날은 한국식 기념일 계산 (시작한 날 = 1일, 카카오톡과 같아요)
 //   예) 2026-01-01 시작 → 1월 1일 "1일", 1월 2일 "2일", 100일째 = 4월 10일
