@@ -376,3 +376,15 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .m-ph:active { transform: scale(.96); }
 .m-ph.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--accent); background: var(--panel); border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: none; font-size: 13px; }
 .m-ph.add .ic { width: 24px; height: 24px; }
+
+/* 설정 → 업데이트 내역 */
+.m-clog-h { display: block; font-size: 17px; margin-bottom: 4px; }
+.m-clog details { border-top: 1px solid var(--border); padding: 6px 0; }
+.m-clog details:first-of-type { border-top: 0; }
+.m-clog summary { display: flex; align-items: center; gap: 8px; list-style: none; padding: 6px 0; cursor: pointer; }
+.m-clog summary::-webkit-details-marker { display: none; }
+.m-clog summary b { font-weight: normal; font-size: 16px; }
+.m-clog summary .m-muted { margin-left: auto; font-size: 13px; }
+.m-clog-now { font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; }
+.m-clog ul { margin: 2px 0 6px 18px; padding: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.65; }
+.m-link { color: var(--accent); text-decoration: underline; font: inherit; padding: 0; background: none; }

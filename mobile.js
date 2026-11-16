@@ -514,7 +514,8 @@ function viewSettings() {
       <a class="m-btn primary" href="HaruPlanner.apk" download>APK 받기</a>
       <p class="m-muted">처음 설치할 때 "출처를 알 수 없는 앱" 허용을 물어보면 허용해 주세요.</p>
     </div>` : ''}
-    ${ANDROID_APP ? `<p class="m-foot">안드로이드 앱 ${esc(ANDROID_APP.slice(1).join('.'))}</p>` : ''}
+    ${ANDROID_APP ? `<p class="m-foot">안드로이드 앱 ${esc(ANDROID_APP.slice(1).join('.'))}${apkInfo && apkNewer() ? ` · <button class="m-link" data-a="apk-update">새 버전 ${esc(apkInfo.version)} 설치</button>` : ''}</p>` : ''}
+    ${changelogCardHTML()}
     ${standalone || ANDROID_APP ? '' : `<div class="m-card m-pad m-install">
       <b>${icon('share')}홈 화면에 앱으로 추가하기</b>
       <p><b>아이폰 (Safari)</b>: 아래 공유 버튼 ${icon('share', 'mini')} → <b>홈 화면에 추가</b></p>
@@ -854,6 +855,7 @@ document.addEventListener('click', (e) => {
       Cloud.signOut().then(() => { try { localStorage.removeItem(CACHE_KEY); } catch (_) { /* 무시 */ } state.data = null; widgetSignedOut(); loginScreen(); });
       break;
     case 'go-login': location.href = location.pathname; break;
+    case 'apk-update': installApk(); break;
     // 시트
     case 'sheet-close': closeSheet(); break;
     case 'pick': if (pickHandler) pickHandler(Number(el.dataset.i)); break;
@@ -1100,6 +1102,7 @@ async function startCloud() {
   render();
   saveCacheSoon();
   widgetInbox();
+  setTimeout(showWhatsNew, 1200);
 }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-a="retry-boot"]')) startCloud(); });
 Cloud.onStatus(() => { if (state.data) { const s = $('.m-sync'); if (s) s.outerHTML = syncDot(); if (state.tab === 'settings') render(); } });
@@ -1148,7 +1151,7 @@ function setupUpdates() {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || shown) return; // 처음 설치할 땐 알리지 않아요
     shown = true;
-    toast('HaruPlanner 새 버전이 있어요', { action: '업데이트', timeout: 30000, onAction: () => location.reload() });
+    autoReload();
   });
   checkApk();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkApk(); });
@@ -1166,8 +1169,49 @@ async function checkApk() {
   const mine = Number(ANDROID_APP[1]) * 10000 + Number(ANDROID_APP[2]) * 100 + Number(ANDROID_APP[3]);
   if (apkInfo.versionCode > mine) {
     apkNotified = true;
-    toast(`안드로이드 앱 새 버전 ${apkInfo.version} 이 나왔어요`, { action: '받기', timeout: 30000, onAction: () => { location.href = apkInfo.apk; } });
+    toast(`안드로이드 앱 새 버전 ${apkInfo.version} 이 나왔어요`, { action: '업데이트', timeout: 30000, onAction: installApk });
   }
+}
+const apkNewer = () => !!(apkInfo && ANDROID_APP && apkInfo.versionCode > Number(ANDROID_APP[1]) * 10000 + Number(ANDROID_APP[2]) * 100 + Number(ANDROID_APP[3]));
+// 새 APK: 1.2.0 부터는 앱 안에서 받아서 안드로이드 설치 화면을 바로 띄워요 (예전 앱은 브라우저로 받아요)
+async function installApk() {
+  if (!apkInfo) return;
+  const url = new URL(apkInfo.apk, location.href).href;
+  if (HaruWidget && HaruWidget.installApk) {
+    toast('새 앱을 받는 중이에요…', { timeout: 6000 });
+    try {
+      const r = await HaruWidget.installApk({ url });
+      if (r && r.needPermission) toast('"이 출처의 앱 설치 허용"을 켜고 돌아와서 다시 눌러 주세요', { timeout: 8000, action: '다시', onAction: installApk });
+      return;
+    } catch (_) { /* 예전 앱이면 아래처럼 받아요 */ }
+  }
+  location.href = url;
+}
+// 웹 앱 새 버전: 버튼 없이 바꿔요. 화면을 안 보고 있으면 바로, 보고 있으면 시트 · 입력이 끝난 뒤에 새로고침해요.
+function autoReload() {
+  const go = () => { const f = !DEMO && Cloud.isActive() ? Cloud.flushNow(1500) : Promise.resolve(); f.catch(() => {}).finally(() => location.reload()); };
+  if (document.hidden) { go(); return; }
+  toast('새 버전으로 바꾸는 중이에요…', { timeout: 3000 });
+  const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('input, textarea') && String(a.value || '').length); };
+  const tryGo = () => { if (topSheet() || typing()) { setTimeout(tryGo, 2000); return; } go(); };
+  setTimeout(tryGo, 2500);
+}
+// 업데이트 뒤 처음 열면 무엇이 바뀌었는지 알려줘요
+const MY_PLATFORM = ANDROID_APP ? 'android' : 'phone';
+function showWhatsNew() {
+  if (DEMO || !APP_VERSION) return;
+  const ver = APP_VERSION.split('-')[0];
+  let last = null;
+  try { last = localStorage.getItem('haru:lastVersion'); localStorage.setItem('haru:lastVersion', ver); } catch (_) { return; }
+  if (!last || verNum(ver) <= verNum(last)) return;
+  toast(`HaruPlanner ${ver} 으로 업데이트했어요`, { action: '새로운 점', timeout: 8000, onAction: () => { state.tab = 'settings'; render(); setTimeout(() => { const c = $('#mChangelog'); if (c) c.scrollIntoView({ behavior: 'smooth' }); }, 100); } });
+}
+function changelogCardHTML() {
+  const ver = (APP_VERSION || '').split('-')[0];
+  const list = changelogFor(MY_PLATFORM).slice(0, 6);
+  return `<div class="m-card m-pad m-clog" id="mChangelog"><b class="m-clog-h">업데이트 내역</b>
+    ${list.map((e, i) => `<details ${i === 0 ? 'open' : ''}><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : ''}<span class="m-muted">${esc(e.date || '')}</span></summary>
+      <ul>${e.items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>`).join('')}</div>`;
 }
 
 // ---------- 안드로이드 홈 화면 위젯 (APK 1.1.0 부터) ----------
@@ -1183,7 +1227,7 @@ const HaruWidget = (() => {
     if (typeof C.nativePromise === 'function') return C.nativePromise('HaruWidget', method, opts);
     return Promise.reject(new Error('no bridge'));
   };
-  return { update: (o) => call('update', o), takePending: () => call('takePending') };
+  return { update: (o) => call('update', o), takePending: () => call('takePending'), installApk: (o) => call('installApk', o) };
 })();
 let widgetLast = '';
 let widgetT = 0;
