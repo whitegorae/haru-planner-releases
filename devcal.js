@@ -20,8 +20,10 @@ const DevCal = (() => {
     return C.nativePromise('HaruCalendar', m, o);
   };
   const KEY = 'haru-devcal';
-  const PAST = 30;
-  const FUTURE = 365;
+  // 가져올 기간: 'all' 전체(기본) · '365' 최근 1년 · '30' 최근 30일 — 앞으로는 10년 뒤까지
+  const PAST_OPTS = { all: null, 365: 365, 30: 30 };
+  const PUSH_PAST = 30; // 하루플래너 → 폰: 끝난 옛 할 일이 쏟아지지 않게 최근 30일부터만 새로 보내요
+  const FUTURE = 3650;
   const POLL_MS = 30 * 1000;
   const DONE = '✓ ';
   let cfg = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { return {}; } })();
@@ -140,8 +142,10 @@ const DevCal = (() => {
       }
       const ids = [...new Set([...(cfg.calIds || []), cfg.target].filter(Boolean))];
       const today = todayStr();
-      const minDate = addDays(today, -PAST);
-      const { events = [] } = await call('events', { calIds: ids, from: localMs(minDate, null), to: localMs(addDays(today, FUTURE), null) });
+      const pastDays = Object.prototype.hasOwnProperty.call(PAST_OPTS, String(cfg.past)) ? PAST_OPTS[String(cfg.past)] : null;
+      const from = pastDays === null ? 0 : localMs(addDays(today, -pastDays), null);
+      const minDate = addDays(today, -PUSH_PAST);
+      const { events = [] } = await call('events', { calIds: ids, from, to: localMs(addDays(today, FUTURE), null) });
       const seen = new Set();
       let skippedRepeat = 0;
       let pulledNow = 0;
@@ -301,6 +305,7 @@ const DevCal = (() => {
   function setTarget(id) { cfg.target = id; if (!(cfg.calIds || []).includes(id)) cfg.calIds = [...(cfg.calIds || []), id]; saveCfg(); emit(); schedule(200); }
   function setPush(on) { cfg.push = !!on; saveCfg(); emit(); schedule(200); }
   function setList(id) { cfg.listId = id; saveCfg(); emit(); }
+  function setPast(v) { cfg.past = Object.prototype.hasOwnProperty.call(PAST_OPTS, String(v)) ? String(v) : 'all'; saveCfg(); emit(); schedule(200); }
 
   return {
     available,
@@ -308,7 +313,7 @@ const DevCal = (() => {
     config: () => cfg,
     serverGoogle,
     onStatus: (f) => { listeners.add(f); return () => listeners.delete(f); },
-    start, enable, disable, sync, schedule, loadCalendars, setCals, setTarget, setPush, setList,
+    start, enable, disable, sync, schedule, loadCalendars, setCals, setTarget, setPush, setList, setPast,
     _fieldsOf: fieldsOf, _eventOf: eventOf, // 시험용
   };
 })();

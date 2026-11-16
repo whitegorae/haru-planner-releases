@@ -972,6 +972,7 @@ document.addEventListener('change', (e) => {
   if (t.id === 'mCsList') { CalSync.setList(t.value); return; }
   if (t.id === 'mDcTarget') { DevCal.setTarget(t.value); return; }
   if (t.id === 'mDcList') { DevCal.setList(t.value); return; }
+  if (t.id === 'mDcPast') { DevCal.setPast(t.value); return; }
   if (t.dataset && t.dataset.dc === 'cal') { DevCal.setCals([...document.querySelectorAll('[data-dc="cal"]:checked')].map((x) => x.value)); return; }
   if (t.id === 'mDcPush') { DevCal.setPush(t.checked); return; }
   if (t.id === 'tsList' && taskSheet) { taskSheet.d.listId = t.value; applyEdit(); refreshTaskSheet(); return; }
@@ -1313,6 +1314,7 @@ function calCardsHTML() {
           <p class="m-muted small">공휴일은 하루플래너가 따로 보여줘서 기본으로 빼 뒀어요.</p>
           <div class="m-set"><span>할 일을 넣을 캘린더</span><select id="mDcTarget" class="m-select">${writable.length ? '' : '<option value="">(쓸 수 있는 캘린더 없음)</option>'}${writable.map((x) => `<option value="${esc(x.id)}" ${x.id === cfg.target ? 'selected' : ''}>${esc(x.name || x.account)}${x.google ? ' (구글)' : ''}</option>`).join('')}</select></div>
           ${c ? `<p class="m-dc-count">폰 캘린더와 연결된 일정 <b>${c.linked}</b>개<br><span>앱을 연 뒤로 폰에서 가져온 것 ${c.pulledTotal}개 · 폰으로 보낸 것 ${c.pushedTotal}개${c.skippedRepeat ? ` · 반복 일정 ${c.skippedRepeat}개는 아직 가져오지 않아요` : ''}</span></p>` : ''}
+          <div class="m-set"><span>가져올 기간</span><select id="mDcPast" class="m-select">${[['all', '전체'], ['365', '최근 1년'], ['30', '최근 30일']].map(([v, l]) => `<option value="${v}" ${String(cfg.past || 'all') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="m-set"><span>가져온 일정 목록</span><select id="mDcList" class="m-select">${opts(cfg.listId || 'inbox')}</select></div>
           <label class="m-set"><span>하루플래너 할 일을 폰 캘린더로 보내기</span><input type="checkbox" id="mDcPush" ${cfg.push !== false ? 'checked' : ''}></label>
           <p class="m-muted">${d.busy ? '맞추는 중…' : d.lastAt ? `마지막 ${time(d.lastAt)} · 앱이 켜져 있는 동안 바로바로 맞춰요` : ''}</p>
