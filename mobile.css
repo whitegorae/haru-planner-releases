@@ -363,8 +363,15 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 }
 
 /* ===================== 사진 일기 ===================== */
-.m-cell-ph { position: absolute; top: 4px; right: 3px; width: calc(18 * var(--u)); height: calc(18 * var(--u)); border-radius: 5px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); background: var(--hover); }
-.m-cell-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 사진이 있는 날: 칸 배경에 사진을 은은하게 깔아요 (날짜 · 일정은 그대로 위에) */
+.m-cell-ph { position: absolute; inset: 1px; z-index: 0; border-radius: 11px; overflow: hidden; pointer-events: none; }
+.m-cell-ph img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .62; }
+.m-cell-ph::after { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 18%, transparent) 0%, color-mix(in srgb, var(--panel) 40%, transparent) 45%, color-mix(in srgb, var(--panel) 72%, transparent) 100%); }
+.m-cell > .m-cell-n, .m-cell > .m-cell-bars, .m-cell > .m-cell-dd { position: relative; z-index: 1; }
+.m-cell > .m-cell-dd { position: absolute; }
+.m-cell.has-ph:not(.today) .m-cell-n { text-shadow: 0 0 4px var(--panel), 0 0 2px var(--panel); font-weight: 600; }
+.m-cell.has-ph .m-bar { box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
 .m-cell .m-cell-dd { right: auto; left: 5px; }
 .m-photos { margin: 0 0 14px; }
 .m-photos-h { display: flex; align-items: center; gap: 6px; padding: 6px 4px; font-size: calc(15 * var(--u)); color: var(--text-2); }

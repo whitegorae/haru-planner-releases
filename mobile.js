@@ -407,7 +407,7 @@ function viewCalendar() {
     const hol = holidayOf(d);
     const dd = state.data.ddays.find((x) => x.date === d);
     const shown = items.slice(0, 3);
-    cells += `<button class="m-cell${out ? ' out' : ''}${d === t ? ' today' : ''}${d === state.calSel ? ' sel' : ''}${wd === 0 || hol ? ' sun' : wd === 6 ? ' sat' : ''}" data-a="cal-day" data-d="${d}">
+    cells += `<button class="m-cell${out ? ' out' : ''}${d === t ? ' today' : ''}${d === state.calSel ? ' sel' : ''}${photosOn(d).length ? ' has-ph' : ''}${wd === 0 || hol ? ' sun' : wd === 6 ? ' sat' : ''}" data-a="cal-day" data-d="${d}">
       <span class="m-cell-n">${parseYmd(d).getDate()}</span>
       ${dd ? `<i class="m-cell-dd" style="background:${esc(ddColor(dd))}"></i>` : ''}${cellPhoto(d)}
       <span class="m-cell-bars">${shown.map((x) => `<span class="m-bar ${x.done ? 'done' : ''}" style="--c:${esc(taskColor(x))}">${esc(x.title)}</span>`).join('')}${items.length > 3 ? `<span class="m-more">+${items.length - 3}</span>` : ''}</span>
