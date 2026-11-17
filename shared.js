@@ -24,13 +24,13 @@ const HaruDialog = (() => {
   .hd-btn.ok.danger{background:#e5556b}
   @keyframes hdFade{from{opacity:0}} @keyframes hdPop{from{opacity:0;transform:scale(.94)}}`;
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  function open(message, { okText = '확인', cancelText = '취소', danger = false, input = null, alertOnly = false } = {}) {
+  function open(message, { okText = '확인', cancelText = '취소', danger = false, input = null, alertOnly = false, password = false, placeholder = '' } = {}) {
     if (!document.getElementById('hdCss')) { const s = document.createElement('style'); s.id = 'hdCss'; s.textContent = CSS; document.head.appendChild(s); }
     return new Promise((resolve) => {
       const back = document.createElement('div');
       back.className = 'hd-back';
       back.innerHTML = `<div class="hd" role="dialog" aria-modal="true"><div class="hd-msg">${esc(message)}</div>
-        ${input !== null ? `<input class="hd-in" value="${esc(input)}" autocomplete="off" spellcheck="false">` : ''}
+        ${input !== null ? `<input class="hd-in" type="${password ? 'password' : 'text'}" value="${esc(input)}" placeholder="${esc(placeholder)}" autocomplete="${password ? 'new-password' : 'off'}" spellcheck="false">` : ''}
         <div class="hd-row">${alertOnly ? '' : `<button class="hd-btn no">${esc(cancelText)}</button>`}<button class="hd-btn ok ${danger ? 'danger' : ''}">${esc(okText)}</button></div></div>`;
       const inp = back.querySelector('.hd-in');
       const done = (ok) => {

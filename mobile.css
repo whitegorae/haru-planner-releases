@@ -403,6 +403,15 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .m-err { color: #e5556b; font-size: 13.5px; margin: 6px 0 0; }
 .m-row2 { display: flex; gap: 8px; }
 .m-row2 .m-btn { flex: 1; }
+/* 백업 카드 */
+.m-bk .m-row2, .m-bk > .m-btn { margin-top: 8px; }
+.m-bk .m-set { margin-top: 8px; }
+.m-bk-sep { height: 1px; background: var(--border); margin: 14px 0 10px; }
+.m-bk-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.m-bk-item { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--hover); font-size: 14.5px; }
+.m-bk-item > span { flex: 1; min-width: 0; }
+.m-bk-item .m-btn { width: auto; height: 34px; min-height: 0; margin: 0; padding: 0 12px; font-size: 13.5px; flex: none; }
+.m-bk-item .m-btn svg { width: 16px; height: 16px; margin: 0; }
 .m-checks { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
 .m-checks label { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .m-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
