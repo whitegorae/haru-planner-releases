@@ -1150,6 +1150,7 @@ function loading(text = '일정을 불러오는 중…') {
   $('#app').innerHTML = `<div class="m-loading"><div class="m-logo pulse">${icon('check')}</div><p>${text}</p></div>`;
 }
 function onRemote() {
+  state.dataAt = Date.now(); // 서버와 맞춘 때 (폰 캘린더 연동이 오래된 데이터로 지우지 않게)
   render();
   if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 다른 기기에서 바꾼 것도 폰 캘린더로
   Photos.refreshViewer();
@@ -1177,6 +1178,7 @@ async function startCloud() {
   }
   state.offline = false;
   state.data = normalize(Cloud.buildData(rows, defaultData()));
+  state.dataAt = Date.now();
   Cloud.start(rows, () => state.data, onRemote);
   applyTheme();
   render();
@@ -1669,4 +1671,29 @@ async function boot() {
   }
   await startCloud();
 }
-boot();
+
+// ---------- 안드로이드: 앱이 닫혀 있을 때 폰 캘린더가 바뀌면 (APK 1.6.0~) ----------
+// 폰이 보이지 않는 화면으로 이 페이지를 "?bg=devcal" 로 열어요 → 화면은 그리지 않고
+// 로그인 확인 → 서버에서 받기 → 폰 캘린더(삼성 일정 · 할 일) 맞추기 → 서버에 올리기 → 폰에 "끝났어요"
+const BG_DEVCAL = /[?&]bg=devcal\b/.test(location.search) && !!window.HaruBg && !window.Capacitor;
+async function bgDevcal() {
+  const done = (msg) => { try { window.HaruBg.done(String(msg || 'ok')); } catch (_) { /* 폰이 이미 닫았어요 */ } };
+  try {
+    const cfg = Cloud.config();
+    if (!cfg || typeof DevCal === 'undefined' || !DevCal.available) { done('unavailable'); return; }
+    Cloud.connect(cfg.url, cfg.key);
+    const user = await Cloud.currentUser().catch(() => null);
+    if (!user) { done('no-user'); return; }
+    const rows = await Cloud.fetchAll();
+    state.offline = false;
+    state.data = normalize(Cloud.buildData(rows, defaultData()));
+    state.dataAt = Date.now();
+    Cloud.start(rows, () => state.data, () => { state.dataAt = Date.now(); });
+    const r = await DevCal.runOnce();
+    if (Cloud.isActive()) await Cloud.flushNow(15000).catch(() => {});
+    done(r && r.error ? `error:${r.error}` : 'ok');
+  } catch (e) {
+    done(`error:${(e && e.message) || e}`);
+  }
+}
+if (BG_DEVCAL) bgDevcal(); else boot();

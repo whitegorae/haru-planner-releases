@@ -13,12 +13,31 @@
  * ========================================================================= */
 
 const DevCal = (() => {
-  const C = window.Capacitor;
+  // 앱이 닫혀 있을 때 폰이 숨은 화면으로 이 앱을 열면(?bg=devcal) window.HaruBg 로 폰 캘린더를 읽고 써요 (APK 1.6.0~)
+  const bgBridge = !window.Capacitor && window.HaruBg ? {
+    isPluginAvailable: (n) => n === 'HaruCalendar',
+    Plugins: {
+      HaruCalendar: new Proxy({}, {
+        get: (_, m) => {
+          if (m === 'addListener') return () => ({ remove() {} });
+          return (o) => {
+            let r;
+            try { r = JSON.parse(window.HaruBg.call(String(m), JSON.stringify(o || {}))); } catch (e) { return Promise.reject(e); }
+            return r && r.ok ? Promise.resolve(r.data || {}) : Promise.reject(new Error((r && r.error) || 'error'));
+          };
+        },
+      }),
+    },
+  } : null;
+  const C = window.Capacitor || bgBridge;
   const available = !!(C && ((C.isPluginAvailable && C.isPluginAvailable('HaruCalendar')) || (Array.isArray(C.PluginHeaders) && C.PluginHeaders.some((h) => h.name === 'HaruCalendar'))));
   const call = (m, o = {}) => {
-    const p = C.Plugins && C.Plugins.HaruCalendar;
-    if (p && typeof p[m] === 'function') return p[m](o);
-    return C.nativePromise('HaruCalendar', m, o);
+    try {
+      const p = C && C.Plugins && C.Plugins.HaruCalendar;
+      if (p && typeof p[m] === 'function') return Promise.resolve(p[m](o));
+      if (C && typeof C.nativePromise === 'function') return C.nativePromise('HaruCalendar', m, o);
+    } catch (e) { return Promise.reject(e); }
+    return Promise.reject(new Error(`${m}() is not implemented`));
   };
   const KEY = 'haru-devcal';
   // 가져올 기간: 'all' 전체(기본) · '365' 최근 1년 · '30' 최근 30일 — 앞으로는 10년 뒤까지
@@ -27,8 +46,24 @@ const DevCal = (() => {
   const FUTURE = 3650;
   const POLL_MS = 30 * 1000;
   const DONE = '✓ ';
-  let cfg = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { return {}; } })();
+  const loadCfg = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { return {}; } };
+  let cfg = loadCfg();
   const saveCfg = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (_) { /* 무시 */ } };
+  // 앱 화면과 (앱이 닫혀 있을 때의) 숨은 화면이 같은 저장소를 써요 → 동시에 맞추지 않게 잠깐 잠가요
+  const LOCK = 'haru-devcal-lock';
+  const me = Math.random().toString(36).slice(2);
+  function takeLock() {
+    try {
+      const l = JSON.parse(localStorage.getItem(LOCK) || 'null');
+      if (l && l.o !== me && l.u > Date.now()) return false;
+      localStorage.setItem(LOCK, JSON.stringify({ o: me, u: Date.now() + 40000 }));
+      return true;
+    } catch (_) { return true; }
+  }
+  function dropLock() { try { const l = JSON.parse(localStorage.getItem(LOCK) || 'null'); if (l && l.o === me) localStorage.removeItem(LOCK); } catch (_) { /* 무시 */ } }
+  // 이 화면에서 한 번이라도 본 할 일 (오래된 데이터로 폰 일정을 지우지 않게)
+  const seenTids = new Set();
+  const nowAt = () => Date.now();
   const st = { available, granted: false, calendars: null, busy: false, lastAt: null, error: null, warn: null };
   const listeners = new Set();
   const emit = () => listeners.forEach((f) => { try { f(st); } catch (_) { /* 무시 */ } });
@@ -171,7 +206,7 @@ const DevCal = (() => {
         if (t.dueDate !== f.dueDate) t.reminded = null;
         Object.assign(t, f);
       }
-      tmap[k.id] = { tid: t.id, fp, h: taskHash(t) };
+      tmap[k.id] = { tid: t.id, fp, h: taskHash(t), at: nowAt() };
       res.changed = true;
       res.pulled++;
     }
@@ -191,15 +226,21 @@ const DevCal = (() => {
     return res;
   }
 
+  let halted = false; // 숨은 동기화 화면: 한 번 맞춘 뒤로는 더 돌지 않아요 (곧 닫혀요)
   async function sync() {
-    if (!available || !cfg.on || !st.granted || !state.data) return;
+    if (halted || !available || !cfg.on || !st.granted || !state.data) return;
     if (typeof canEdit === 'function' && state.offline) return;
     if (running) { again = true; return; }
+    if (!takeLock()) { schedule(3000); return; } // 다른 화면(앱이 닫혀 있을 때의 숨은 동기화)이 맞추는 중
+    // 다른 화면이 고친 연결 정보를 가져와요 (이 화면의 옛 정보로 덮어쓰면 할 일이 두 번 생겨요)
+    cfg = loadCfg();
+    if (!cfg.on) { dropLock(); return; }
     running = true;
     st.busy = true;
     st.error = null;
     emit();
     let changed = false;
+    for (const t of state.data.tasks) seenTids.add(t.id);
     try {
       cfg.map = cfg.map || {};
       const map = cfg.map;
@@ -238,7 +279,7 @@ const DevCal = (() => {
           const key = `${f.title.trim().toLowerCase()}|${f.dueDate}|${f.dueTime || ''}`;
           const linkedTids = new Set([...Object.values(map), ...Object.values(cfg.tmap || {})].map((x) => x.tid));
           const same = state.data.tasks.find((x) => !linkedTids.has(x.id) && x.dueDate && `${String(x.title || '').trim().toLowerCase()}|${x.dueDate}|${x.dueTime || ''}` === key);
-          if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false, calId: ev.calId, src: 'link' }; continue; }
+          if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false, calId: ev.calId, src: 'link', at: nowAt() }; continue; }
         }
         // 양쪽에서 다 고쳤으면 하루플래너 쪽을 남겨요 (폰 캘린더는 고친 시각을 알려주지 않아서) → 2) 에서 폰 일정을 고쳐요
         if (m && t && hashOf(t) !== m.h) { m.fp = fp; continue; }
@@ -250,7 +291,7 @@ const DevCal = (() => {
           if (t.dueDate !== f.dueDate || t.dueTime !== f.dueTime) t.reminded = null;
           Object.assign(t, f);
         }
-        map[ev.id] = { tid: t.id, fp, h: hashOf(t), noEnd: !!(m && m.noEnd && !t.endTime && t.dueTime), calId: ev.calId, src: (m && m.src) || 'dev' };
+        map[ev.id] = { tid: t.id, fp, h: hashOf(t), noEnd: !!(m && m.noEnd && !t.endTime && t.dueTime), calId: ev.calId, src: (m && m.src) || 'dev', at: nowAt() };
         changed = true;
         pulledNow++;
       }
@@ -302,7 +343,7 @@ const DevCal = (() => {
           const e = eventOf(t);
           const r = await call('upsert', { id: eid || null, calId: (m && m.calId) || cfg.target, title: e.title, notes: e.notes, start: e.start, end: e.end, allDay: e.allDay });
           if (eid && r.id !== eid) delete map[eid];
-          map[r.id] = { tid: t.id, fp: fpOf(e), h, noEnd: e.noEnd, calId: (m && m.calId) || cfg.target, src: (m && m.src) || 'haru' };
+          map[r.id] = { tid: t.id, fp: fpOf(e), h, noEnd: e.noEnd, calId: (m && m.calId) || cfg.target, src: (m && m.src) || 'haru', at: nowAt() };
           pushedNow++;
         }
       }
@@ -313,8 +354,10 @@ const DevCal = (() => {
       st.total.pushed += pushedNow;
       st.counts = { linked: Object.keys(map).length, pulledNow, pushedNow, pulledTotal: st.total.pulled, pushedTotal: st.total.pushed, skippedRepeat };
       // 3) 하루플래너에서 지운 할 일 → 폰에서도 지우기
+      //    단, 이 화면이 그 할 일을 본 적이 없고 데이터가 연결보다 오래됐으면(다른 화면이 방금 만든 연결) 지우지 않아요
       for (const [eid, m] of Object.entries(map)) {
         if (taskById(m.tid)) continue;
+        if (!seenTids.has(m.tid) && !(m.at ? (state.dataAt || 0) > m.at + 3000 : true)) continue;
         await call('remove', { id: eid }).catch(() => {});
         delete map[eid];
       }
@@ -325,6 +368,7 @@ const DevCal = (() => {
       if (/no-permission/.test(st.error)) { st.granted = false; st.error = '캘린더 권한이 꺼졌어요. 다시 연동해 주세요.'; }
     } finally {
       running = false;
+      dropLock();
       st.busy = false;
       if (changed) {
         commit();
@@ -334,6 +378,33 @@ const DevCal = (() => {
       emit();
       if (again) { again = false; schedule(1500); }
     }
+  }
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  // 한 번 맞추고(이미 도는 중이면 끝날 때까지 기다려서) 서버에 올려요
+  const lockBusy = () => { try { const l = JSON.parse(localStorage.getItem(LOCK) || 'null'); return !!(l && l.o !== me && l.u > Date.now()); } catch (_) { return false; } };
+  async function syncFully() {
+    const until = Date.now() + 20000;
+    while (lockBusy() && Date.now() < until - 8000) await wait(250); // 다른 화면이 맞추는 중이면 잠깐 기다려요
+    await sync();
+    while ((running || again) && Date.now() < until) { await wait(150); if (!running && again) { again = false; clearTimeout(schedT); await sync(); } }
+    if (typeof Cloud !== 'undefined' && Cloud.isActive && Cloud.isActive() && Cloud.flushNow) { try { await Cloud.flushNow(10000); } catch (_) { /* 다음에 */ } }
+  }
+  async function syncAndReport() {
+    try { await syncFully(); } finally { call('syncDone').catch(() => {}); }
+  }
+  // 앱이 닫혀 있어도 폰 캘린더가 바뀌면 깨워 달라고 폰에 알려요 (예전 APK 에는 없어서 그냥 넘어가요)
+  const bgEnable = (on) => { try { const r = call('bgEnable', { on: !!on }); if (r && r.catch) r.catch(() => {}); } catch (_) { /* 예전 APK */ } };
+  // 숨은 동기화 화면(앱이 닫혀 있을 때)에서 한 번만 맞추기
+  async function runOnce() {
+    if (!available) return { skipped: 'unavailable' };
+    await checkPerm();
+    cfg = loadCfg();
+    if (!cfg.on || !st.granted) return { skipped: 'off' };
+    await loadCalendars();
+    await syncFully();
+    halted = true;
+    clearTimeout(schedT);
+    return { ok: !st.error, error: st.error || null, counts: st.counts || null };
   }
   function schedule(ms = 3000) {
     if (!available || !cfg.on) return;
@@ -351,16 +422,18 @@ const DevCal = (() => {
     started = true;
     try {
       const p = C.Plugins && C.Plugins.HaruCalendar;
-      // 앱이 뒤에 있으면 타이머가 늦게 돌아서, 알림이 오면 바로 맞춰요 (폰 쪽에서 이미 1.5초 모아서 보내요)
-      const onChanged = () => { clearTimeout(schedT); sync(); };
+      // 앱이 뒤에 있으면 타이머가 늦게 돌아서, 알림이 오면 바로 맞추고 → 서버에 올린 뒤 → 폰에 "끝났어요" (폰이 그때까지 앱을 깨워 둬요)
+      const onChanged = () => { clearTimeout(schedT); syncAndReport(); };
       if (p && p.addListener) p.addListener('changed', onChanged);
       else if (C.addListener) C.addListener('HaruCalendar', 'changed', onChanged);
     } catch (_) { /* 켜져 있을 때만 30초마다 맞춰요 */ }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(300); });
     await checkPerm();
-    if (cfg.on && st.granted) { loadCalendars(); startLoop(); schedule(500); }
+    if (cfg.on && st.granted) { loadCalendars(); startLoop(); schedule(500); bgEnable(true); }
     emit();
   }
+  // 설정 바꾸기: 다른 화면이 고친 연결 정보를 먼저 가져온 뒤에 고쳐요
+  function edit(fn) { cfg = loadCfg(); fn(cfg); saveCfg(); emit(); }
 
   // 연동하기: 권한 묻기 → 캘린더 목록 → 구글이 아닌 쓰기 가능한 캘린더를 기본으로 골라요
   async function enable() {
@@ -369,6 +442,7 @@ const DevCal = (() => {
     st.granted = !!(r && r.granted);
     if (!st.granted) { st.error = '캘린더 접근을 허용해야 연동할 수 있어요'; emit(); return false; }
     const cals = await loadCalendars();
+    cfg = loadCfg();
     if (!cfg.calIds || !cfg.calIds.length || cfg.v !== 2) applyDefaults(cals);
     else if (!cfg.target) cfg.target = pickTarget(cals);
     cfg.v = 2;
@@ -377,20 +451,20 @@ const DevCal = (() => {
     saveCfg();
     startLoop();
     emit();
+    bgEnable(true);
     await sync();
     return true;
   }
   function disable() {
-    cfg.on = false;
+    edit((c) => { c.on = false; });
     clearInterval(pollT);
-    saveCfg();
-    emit();
+    bgEnable(false);
   }
-  function setCals(ids) { cfg.calIds = ids; saveCfg(); emit(); schedule(200); }
-  function setTarget(id) { cfg.target = id; if (!(cfg.calIds || []).includes(id)) cfg.calIds = [...(cfg.calIds || []), id]; saveCfg(); emit(); schedule(200); }
-  function setPush(on) { cfg.push = !!on; saveCfg(); emit(); schedule(200); }
-  function setList(id) { cfg.listId = id; saveCfg(); emit(); }
-  function setPast(v) { cfg.past = Object.prototype.hasOwnProperty.call(PAST_OPTS, String(v)) ? String(v) : 'all'; saveCfg(); emit(); schedule(200); }
+  function setCals(ids) { edit((c) => { c.calIds = ids; }); schedule(200); }
+  function setTarget(id) { edit((c) => { c.target = id; if (!(c.calIds || []).includes(id)) c.calIds = [...(c.calIds || []), id]; }); schedule(200); }
+  function setPush(on) { edit((c) => { c.push = !!on; }); schedule(200); }
+  function setList(id) { edit((c) => { c.listId = id; }); }
+  function setPast(v) { edit((c) => { c.past = Object.prototype.hasOwnProperty.call(PAST_OPTS, String(v)) ? String(v) : 'all'; }); schedule(200); }
 
   return {
     available,
@@ -398,7 +472,7 @@ const DevCal = (() => {
     config: () => cfg,
     serverGoogle,
     onStatus: (f) => { listeners.add(f); return () => listeners.delete(f); },
-    start, enable, disable, sync, schedule, loadCalendars, setCals, setTarget, setPush, setList, setPast,
+    start, enable, disable, sync, schedule, loadCalendars, setCals, setTarget, setPush, setList, setPast, runOnce,
     _fieldsOf: fieldsOf, _eventOf: eventOf, _taskFieldsOf: taskFieldsOf, // 시험용
   };
 })();

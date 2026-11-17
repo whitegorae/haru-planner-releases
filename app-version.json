@@ -1,8 +1,8 @@
 {
   "android": {
-    "version": "1.5.0",
-    "versionCode": 10500,
+    "version": "1.6.0",
+    "versionCode": 10600,
     "apk": "HaruPlanner.apk",
-    "builtAt": "2026-11-17T13:26:31.139Z"
+    "builtAt": "2026-11-17T14:36:52.706Z"
   }
 }
