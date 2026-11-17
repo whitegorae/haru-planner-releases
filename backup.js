@@ -208,8 +208,8 @@ const HaruBackup = (() => {
   }
 
   // 사진 한 장(큰 사진 + 작은 사진) → 암호문 하나. 경로도 안쪽(암호문)에 넣어요
-  async function lockPhoto(photo, full, thumb, password) {
-    const meta = enc.encode(JSON.stringify({ id: photo.id, date: photo.date, path: photo.path || '', thumb: photo.thumb || '' }));
+  async function lockPhoto(photo, full, thumb, password, type) {
+    const meta = enc.encode(JSON.stringify({ id: photo.id, date: photo.date, path: photo.path || '', thumb: photo.thumb || '', type: type || 'image/jpeg' }));
     const t = thumb || new Uint8Array(0);
     const buf = new Uint8Array(8 + meta.length + full.length + t.length);
     const dv = new DataView(buf.buffer);
@@ -344,8 +344,8 @@ const HaruBackup = (() => {
   // ---------- 원본 사진 (드라이브의 "HaruPlanner 원본 사진" 폴더) ----------
   // 새 사진의 원본을 어디에 둘지: 드라이브가 연결돼 있고 이 기기에 열쇠가 있으면 드라이브
   const photoToDrive = async () => keyReady() && (await driveOn());
-  async function drivePhotoPut(photo, fullBytes) {
-    const text = await lockPhoto({ id: photo.id, date: photo.date, path: '', thumb: photo.thumb }, fullBytes, null);
+  async function drivePhotoPut(photo, fullBytes, type) {
+    const text = await lockPhoto({ id: photo.id, date: photo.date, path: '', thumb: photo.thumb }, fullBytes, null, undefined, type);
     const r = await drive('photo-put', { id: photo.id, content: text });
     if (!r || !r.file || !r.file.id) throw new Error('원본 사진을 드라이브에 올리지 못했어요');
     return r.file;
@@ -379,8 +379,9 @@ const HaruBackup = (() => {
       if (!keyReady()) throw codeErr(NEED_KEY, 'need-key');
       const r = await drive('photo-get', { fileId: p.drive });
       const got = await unlockPhoto(r.content);
-      const blob = new Blob([got.full], { type: 'image/jpeg' });
-      try { if (typeof caches !== 'undefined') await (await caches.open(ORIG_CACHE)).put(cacheReq(p.drive), new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } })); } catch (_) { /* 무시 */ }
+      const type = /^image\/[\w.+-]+$/.test((got.meta && got.meta.type) || '') ? got.meta.type : 'image/jpeg';
+      const blob = new Blob([got.full], { type });
+      try { if (typeof caches !== 'undefined') await (await caches.open(ORIG_CACHE)).put(cacheReq(p.drive), new Response(blob, { headers: { 'Content-Type': type } })); } catch (_) { /* 무시 */ }
       return keepUrl(p.drive, blob);
     })();
     origLoading.set(p.drive, job);

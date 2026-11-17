@@ -2,6 +2,6 @@
 window.api = {
   cloudConfig: { url: "https://oukymayehdeapoduoxew.supabase.co", key: "sb_publishable_7IjaSMWAC9dGAxpIspfCcA_L5UDlvBM" },
   authRedirect: location.origin + location.pathname.replace(/[^/]*$/, ''),
-  version: "1.20.1",
-  build: "mwkq7ka8",
+  version: "1.20.3",
+  build: "mwksa2j4",
 };

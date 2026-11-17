@@ -14,6 +14,8 @@ const Photos = (() => {
   const URL_TTL = 7 * 24 * 3600; // 초
   const FULL_SIDE = 1600;
   const THUMB_SIDE = 360;
+  const ORIG_SIDE = 4096; // 드라이브 원본: 다시 만들어야 할 때(HEIC 등)의 최대 크기
+  const ORIG_MAX = 10 * 1024 * 1024; // 드라이브 원본: 이보다 크면 고화질 JPG 로 다시 만들어요 (암호화하면 1.35배 → 서버 한 번에 20MB 까지)
   let urls = {};
   try { urls = JSON.parse(localStorage.getItem(URL_KEY)) || {}; } catch (_) { urls = {}; }
   const saveUrls = () => { try { localStorage.setItem(URL_KEY, JSON.stringify(urls)); } catch (_) { /* 용량 초과 등 */ } };
@@ -55,7 +57,6 @@ const Photos = (() => {
     if (!/^image\//.test(file.type || '') && !/\.(jpe?g|png|webp|heic|heif|gif)$/i.test(file.name || '')) throw new Error('사진 파일만 올릴 수 있어요');
     const { img, url } = await loadImage(file);
     try {
-      const full = await toJpeg(img, FULL_SIDE, 0.82);
       const thumb = await toJpeg(img, THUMB_SIDE, 0.75);
       const id = newId();
       const base = `${user().id}/${date.slice(0, 7)}/${id}`;
@@ -64,14 +65,32 @@ const Photos = (() => {
       // 작은 사진(달력 · 위젯용)은 Supabase 에
       const b = await st.upload(`${base}_t.jpg`, thumb.blob, opt);
       if (b.error) throw b.error;
-      const meta = { id, date, path: '', thumb: `${base}_t.jpg`, w: full.w, h: full.h, size: full.blob.size + thumb.blob.size, caption: '', createdAt: Date.now() };
+      const meta = { id, date, path: '', thumb: `${base}_t.jpg`, caption: '', createdAt: Date.now() };
       // 원본은 구글 드라이브의 "HaruPlanner 원본 사진" 폴더에 (드라이브를 연결했고 하루플래너 열쇠가 있을 때)
+      //  → 줄이지 않은 진짜 원본 파일 그대로 (JPG · PNG · WEBP, 15MB 까지). 그 밖(HEIC 등)은 긴 쪽 4096px · 고화질 JPG 로
       if (typeof HaruBackup !== 'undefined' && await HaruBackup.photoToDrive().catch(() => false)) {
         try {
-          const f = await HaruBackup.drivePhotoPut(meta, new Uint8Array(await full.blob.arrayBuffer()));
-          return { ...meta, drive: f.id };
+          let bytes;
+          let type = 'image/jpeg';
+          let w = img.naturalWidth;
+          let h = img.naturalHeight;
+          if (/^image\/(jpeg|png|webp)$/i.test(file.type || '') && file.size <= ORIG_MAX) {
+            bytes = new Uint8Array(await file.arrayBuffer());
+            type = file.type.toLowerCase();
+          } else {
+            let o = await toJpeg(img, ORIG_SIDE, 0.92);
+            if (o.blob.size > ORIG_MAX) o = await toJpeg(img, ORIG_SIDE, 0.8); // 아주 큰 사진
+            bytes = new Uint8Array(await o.blob.arrayBuffer());
+            w = o.w;
+            h = o.h;
+          }
+          const f = await HaruBackup.drivePhotoPut(meta, bytes, type);
+          return { ...meta, w, h, size: bytes.length + thumb.blob.size, drive: f.id };
         } catch (_) { /* 드라이브가 안 되면 지금처럼 Supabase 에 (나중에 자동으로 옮겨요) */ }
       }
+      // 드라이브가 없으면 Supabase 에 (무료 1GB 를 아끼려고 긴 쪽 1600px 로 줄여요)
+      const full = await toJpeg(img, FULL_SIDE, 0.82);
+      Object.assign(meta, { w: full.w, h: full.h, size: full.blob.size + thumb.blob.size });
       const a = await st.upload(`${base}.jpg`, full.blob, opt);
       if (a.error) { st.remove([`${base}_t.jpg`]).catch(() => {}); throw a.error; }
       return { ...meta, path: `${base}.jpg` };
@@ -237,7 +256,7 @@ const Photos = (() => {
       <div class="pv-stage">
         ${cur ? bigTag(cur) : `<div class="pv-empty">${svg('cam').replace('<svg', '<svg style="width:46px;height:46px;opacity:.6"')}<br>아직 사진이 없어요<br><button class="pv-b" style="width:auto;padding:0 18px;margin-top:10px;background:rgba(255,255,255,.14)" data-pv="add">사진 추가</button></div>`}
         ${list.length > 1 ? `<button class="pv-nav l" data-pv="prev" aria-label="이전">${svg('l')}</button><button class="pv-nav r" data-pv="next" aria-label="다음">${svg('r')}</button>` : ''}
-        ${viewer.busy ? `<div class="pv-busy">${viewer.busy}</div>` : cur && viewer.note[cur.id] ? `<div class="pv-busy">${viewer.note[cur.id]}</div>` : ''}
+        ${viewer.busy ? `<div class="pv-busy">${viewer.busy}</div>` : cur && viewer.note[cur.id] ? `<div class="pv-busy">${viewer.note[cur.id]}</div>` : cur && cur.drive && !origOf(cur) ? '<div class="pv-busy pv-orig">원본 불러오는 중…</div>' : ''}
       </div>
       ${cur ? `<input class="pv-cap" maxlength="200" placeholder="한 줄 메모 (선택)" value="${String(cur.caption || '').replace(/"/g, '&quot;')}">` : ''}
       <div class="pv-strip">${list.map((p, i) => `<button class="pv-th ${i === viewer.idx ? 'on' : ''}" data-pv="pick" data-i="${i}">${imgTag(p.thumb || p.path)}</button>`).join('')}
@@ -262,6 +281,8 @@ const Photos = (() => {
       if (!viewer) return;
       const img = viewer.el.querySelector(`img[data-orig="${CSS_ESC(p.id)}"]`);
       if (img) { img.removeAttribute('data-photo'); img.classList.remove('pv-low'); img.src = u; }
+      const pill = viewer.el.querySelector('.pv-orig');
+      if (pill) pill.remove();
       if (viewer.note[p.id]) { delete viewer.note[p.id]; paint(); }
     }).catch((e) => {
       if (!viewer) return;
