@@ -396,10 +396,21 @@ const HaruBackup = (() => {
   // 예전에 Supabase 에 올린 원본을 드라이브로 옮겨요 (옮기고 확인한 뒤 Supabase 쪽 원본은 지워요)
   const move = { running: false, fail: new Map(), getData: null, onChanged: null, moved: 0 };
   function photoMoveSetup(getData, onChanged) { move.getData = getData; move.onChanged = onChanged; }
+  // 이미 드라이브로 옮긴 사진인데 Supabase 에 원본이 남아 있으면 지워요 (옮긴 직후 앱이 닫혀서 못 지운 경우)
+  const cleaned = new Set();
+  async function cleanMoved(data) {
+    const list = (data.photos || []).filter((p) => p && p.drive && !p.path && /_t\.jpg$/.test(p.thumb || '') && !cleaned.has(p.id));
+    if (!list.length) return;
+    try {
+      for (let i = 0; i < list.length; i += 100) await storageRemove(list.slice(i, i + 100).map((p) => p.thumb.replace(/_t\.jpg$/, '.jpg')));
+      list.forEach((p) => cleaned.add(p.id));
+    } catch (_) { /* 다음에 */ }
+  }
   async function photoMoveTick() {
     if (move.running || !move.getData) return 0;
     const data = move.getData();
     if (!data || !cli()) return 0;
+    await cleanMoved(data);
     const todo = (data.photos || []).filter((p) => p && p.id && p.path && !p.drive && (move.fail.get(p.id) || 0) < 3);
     if (!todo.length || !(await photoToDrive())) return 0;
     move.running = true;

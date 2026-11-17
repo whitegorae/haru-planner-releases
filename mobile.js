@@ -1437,7 +1437,7 @@ async function bkAction(a, el) {
     const text = await HaruBackup.pickFile();
     if (text) await bkBusy('되살리는 중…', () => bkRestore(text));
   } else if (a === 'bk-drive-connect') {
-    await HaruBackup.driveConnect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }).then(() => { bk.waiting = true; bkRefresh(); }).catch((e) => toast(e.message));
+    await HaruBackup.driveConnect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }).then(() => { bk.waiting = true; bkRefresh(); bkWatchConnect(); }).catch((e) => toast(e.message));
   } else if (a === 'bk-drive-check') { bk.loaded = false; await bkLoad(); if (bk.drive && bk.drive.connected) bkEnsureKey('원본 사진과 드라이브 백업에 쓸 하루플래너 비밀번호를 넣어 주세요'); }
   else if (a === 'bk-drive-up') {
     if (!(await bkEnsureKey())) return;
@@ -1462,6 +1462,23 @@ async function bkAction(a, el) {
     bkRefresh();
     bkLiveSoon(true);
   }
+}
+// 브라우저에서 "허용"을 누르면 알아서 알아차려요 (5초마다, 최대 5분)
+let bkWatchT = 0;
+function bkWatchConnect() {
+  clearInterval(bkWatchT);
+  const until = Date.now() + 5 * 60 * 1000;
+  bkWatchT = setInterval(async () => {
+    if (!bk.waiting || Date.now() > until) { clearInterval(bkWatchT); return; }
+    try {
+      const st = await HaruBackup.driveStatus();
+      if (!st.connected) return;
+      clearInterval(bkWatchT);
+      toast('구글 드라이브를 연결했어요');
+      await bkLoad();
+      bkEnsureKey('원본 사진과 드라이브 백업에 쓸 하루플래너 비밀번호를 넣어 주세요');
+    } catch (_) { /* 다음에 */ }
+  }, 5000);
 }
 // 실시간 드라이브 백업: 바뀔 때마다 불러요 (켜져 있을 때만 몇 초 모았다가 올려요)
 function bkLiveSoon(now) {

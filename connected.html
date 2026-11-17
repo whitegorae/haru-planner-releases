@@ -17,6 +17,9 @@
     h1 { font-size: 21px; margin: 0 0 10px; }
     p { margin: 6px 0; color: var(--text2); line-height: 1.6; font-size: 15px; }
     b { color: var(--text); }
+    p.close { margin-top: 18px; padding: 14px 16px; border-radius: 18px; background: var(--soft); color: var(--text); }
+    p.sub { font-size: 13px; margin-top: 12px; }
+    p.sub a { color: var(--text2); }
     a.btn { display: inline-block; margin-top: 18px; padding: 13px 24px; border-radius: 999px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
   </style>
 </head>
@@ -30,15 +33,20 @@
       var msg = q.get('msg') || '';
       var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
       var card = document.getElementById('card');
+      // 안드로이드 앱 안에서 열렸으면 앱으로 돌아가는 버튼, 그 밖(PC 앱 · 폰 브라우저)에서는 "이 창을 닫으세요"
+      var inApp = /HaruPlannerAndroid\//.test(navigator.userAgent);
+      var back = inApp
+        ? '<a class="btn" href="./">HaruPlanner 로 돌아가기</a>'
+        : '<p class="close"><b>이 창을 닫고, 원래 쓰던 HaruPlanner 앱으로 돌아가세요.</b><br>PC 앱이면 설정 → 백업에서 "연결 확인"을 눌러 주세요.</p>' +
+          '<p class="sub"><a href="./">웹 버전 HaruPlanner 열기</a></p>';
       if (!ok) card.className = 'card bad';
       card.innerHTML = ok
-        ? '<div class="ic">✓</div><h1>' + (drive ? '구글 드라이브 백업을 연결했어요' : '구글 캘린더를 연결했어요') + '</h1>' + (msg ? '<p><b>' + esc(msg) + '</b></p>' : '') +
+        ? '<div class="ic">✓</div><h1>' + (drive ? '구글 드라이브를 연결했어요' : '구글 캘린더를 연결했어요') + '</h1>' + (msg ? '<p><b>' + esc(msg) + '</b></p>' : '') +
           (drive
-            ? '<p>백업은 드라이브의 앱 전용 숨김 폴더에 들어가요.<br>내 드라이브 화면에는 보이지 않고, 내가 정한 비밀번호 없이는 아무도 열 수 없어요.<br>이 창은 닫고 HaruPlanner 로 돌아가세요.</p>'
-            : '<p>지금부터 하루플래너와 구글 캘린더가 1분 안에 서로 맞춰져요.<br>이 창은 닫고 HaruPlanner 로 돌아가세요.</p>') +
-          '<a class="btn" href="./">HaruPlanner 열기</a>'
+            ? '<p>사진 원본과 백업은 드라이브의 앱 전용 숨김 폴더에 들어가요.<br>내 드라이브 화면에는 보이지 않고, 하루플래너 비밀번호 없이는 아무도 열 수 없어요.</p>'
+            : '<p>지금부터 하루플래너와 구글 캘린더가 1분 안에 서로 맞춰져요.</p>') + back
         : '<div class="ic">!</div><h1>연결하지 못했어요</h1><p>' + esc(msg || '잠시 뒤 다시 시도해 주세요') + '</p>' +
-          '<p>HaruPlanner 설정 → ' + (drive ? '백업' : '캘린더 연동') + '에서 다시 눌러 주세요.</p><a class="btn" href="./">HaruPlanner 열기</a>';
+          '<p>HaruPlanner 설정 → ' + (drive ? '백업' : '캘린더 연동') + '에서 다시 눌러 주세요.</p>' + back;
     })();
   </script>
 </body>
