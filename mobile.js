@@ -253,6 +253,24 @@ function applyTheme() {
   const s = state.data ? S() : baseSettings();
   const vars = applyThemeVars(s);
   $$('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', vars.bg));
+  nativeSystemBars(vars.bg, document.documentElement.dataset.theme === 'dark');
+}
+// 안드로이드 앱: 아래 버튼 줄 · 위 상태 줄을 앱 화면 색으로 (APK 1.4.0~, 예전 APK 는 그냥 넘어가요)
+let barsLast = '';
+function nativeSystemBars(bg, dark) {
+  const C = window.Capacitor;
+  if (!C || !/HaruPlannerAndroid\//.test(navigator.userAgent)) return;
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(bg || '').trim());
+  if (!m) return;
+  const hex = m[1].length === 3 ? `#${m[1].split('').map((c) => c + c).join('')}` : `#${m[1]}`;
+  const key = `${hex}|${dark}`;
+  if (key === barsLast) return;
+  barsLast = key;
+  try {
+    const p = C.Plugins && C.Plugins.HaruWidget;
+    const r = p && typeof p.setSystemBars === 'function' ? p.setSystemBars({ color: hex, dark }) : typeof C.nativePromise === 'function' ? C.nativePromise('HaruWidget', 'setSystemBars', { color: hex, dark }) : null;
+    if (r && r.catch) r.catch(() => { barsLast = ''; });
+  } catch (_) { barsLast = ''; /* 예전 APK */ }
 }
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
 
