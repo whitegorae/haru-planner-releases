@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>HaruPlanner 개인정보처리방침</title>
+  <link rel="icon" href="icons/icon-192.png">
+  <style>
+    :root { --bg: #fff9f4; --panel: #ffffff; --text: #4b3f4c; --text2: #6f6372; --accent: #e0607f; --line: rgba(120, 90, 110, .16); }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1f1b24; --panel: #27212e; --text: #f4ecf3; --text2: #cdbfcc; --accent: #ff8fab; --line: rgba(255, 255, 255, .12); } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 24px 16px 48px;
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; line-height: 1.7; }
+    main { max-width: 720px; margin: 0 auto; background: var(--panel); border-radius: 24px; padding: 28px 24px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 28px 0 8px; padding-top: 18px; border-top: 1px solid var(--line); }
+    p, li { color: var(--text2); font-size: 15px; }
+    b { color: var(--text); }
+    a { color: var(--accent); }
+    .muted { font-size: 13px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>HaruPlanner 개인정보처리방침</h1>
+  <p class="muted">시행일: 2026년 11월 17일</p>
+  <p>HaruPlanner(하루플래너)는 할 일 · 일정 · 디데이 · 포스트잇 · 사진 일기를 관리하는 앱이에요. 이 문서는 앱이 어떤 정보를 어디에 저장하고 무엇에 쓰는지 설명해요.</p>
+
+  <h2>1. 저장하는 정보</h2>
+  <ul>
+    <li><b>계정:</b> 로그인에 쓰는 이메일 주소</li>
+    <li><b>내가 만든 데이터:</b> 할 일, 목록, 디데이, 포스트잇, 타이머 기록, 사진 일기(사진과 메모), 앱 설정</li>
+  </ul>
+  <p>이 정보는 여러 기기에서 같은 데이터를 보도록 클라우드 저장소(Supabase)에 저장돼요. 본인 계정으로만 읽고 쓸 수 있어요.</p>
+
+  <h2>2. 구글 계정 데이터 사용</h2>
+  <p>사용자가 직접 연동을 켠 경우에만 아래 권한을 요청하고, 그 기능에만 써요.</p>
+  <ul>
+    <li><b>구글 캘린더</b> (calendar.events, calendar.readonly): 날짜가 있는 할 일과 사용자가 고른 구글 캘린더 일정을 서로 맞추는 데만 써요.</li>
+    <li><b>구글 드라이브 앱 전용 폴더</b> (drive.appdata): 사용자가 정한 비밀번호로 암호화한 백업 파일을 드라이브의 숨김 앱 폴더에 저장하고 되살리는 데만 써요. 드라이브의 다른 파일은 볼 수도, 건드릴 수도 없어요.</li>
+  </ul>
+  <p>HaruPlanner가 구글 API로 받은 정보의 사용과 다른 앱으로의 전송은 <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API 서비스 사용자 데이터 정책</a>(제한적 사용 요구사항 포함)을 따라요.</p>
+  <ul>
+    <li>구글 데이터를 광고에 쓰지 않아요.</li>
+    <li>구글 데이터를 팔거나 다른 사람에게 넘기지 않아요.</li>
+    <li>사람이 구글 데이터를 읽지 않아요. 사용자가 요청한 경우, 보안 · 법적 의무가 있는 경우는 예외예요.</li>
+    <li>구글 데이터를 AI 모델 학습에 쓰지 않아요.</li>
+  </ul>
+  <p>구글 연동에 필요한 접근 토큰은 서버에만 보관하고, 연동을 끊으면 지워요.</p>
+
+  <h2>3. 백업 암호화</h2>
+  <p>드라이브 백업과 백업 파일은 사용자가 정한 비밀번호로 기기 안에서 암호화(AES-256-GCM)한 뒤 올라가요. 비밀번호는 서버로 보내지 않아서, 개발자 · 구글 · 클라우드 업체 누구도 백업 내용을 볼 수 없어요. 그래서 비밀번호를 잊으면 백업을 되살릴 수 없어요.</p>
+
+  <h2>4. 다른 곳에 주는 정보</h2>
+  <p>위의 저장소(Supabase)와 사용자가 켠 구글 연동 외에는 어떤 회사나 사람에게도 정보를 주지 않아요. 광고나 분석 도구도 쓰지 않아요.</p>
+
+  <h2>5. 지우기와 연동 끊기</h2>
+  <ul>
+    <li>앱에서 지운 항목은 저장소에서도 지워져요.</li>
+    <li>설정에서 구글 캘린더 · 드라이브 연동을 언제든 끊을 수 있어요. <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">구글 계정 → 서드 파티 연결</a>에서도 끊을 수 있어요.</li>
+    <li>드라이브의 백업 파일은 앱의 백업 목록에서 지울 수 있어요.</li>
+    <li>계정과 모든 데이터를 지우고 싶으면 아래 문의처로 알려 주세요.</li>
+  </ul>
+
+  <h2>6. 문의</h2>
+  <p><a href="https://github.com/whitegorae/haru-planner-releases/issues" target="_blank" rel="noopener">github.com/whitegorae/haru-planner-releases/issues</a></p>
+  <p class="muted"><a href="./">HaruPlanner 열기</a></p>
+</main>
+</body>
+</html>
