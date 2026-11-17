@@ -61,12 +61,20 @@ const Photos = (() => {
       const base = `${user().id}/${date.slice(0, 7)}/${id}`;
       const st = client().storage.from(BUCKET);
       const opt = { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false };
-      const a = await st.upload(`${base}.jpg`, full.blob, opt);
-      if (a.error) throw a.error;
+      // 작은 사진(달력 · 위젯용)은 Supabase 에
       const b = await st.upload(`${base}_t.jpg`, thumb.blob, opt);
-      if (b.error) { st.remove([`${base}.jpg`]).catch(() => {}); throw b.error; }
-      // 방금 올린 건 바로 보이게 이 기기 주소를 미리 넣어 둬요
-      return { id, date, path: `${base}.jpg`, thumb: `${base}_t.jpg`, w: full.w, h: full.h, size: full.blob.size + thumb.blob.size, caption: '', createdAt: Date.now() };
+      if (b.error) throw b.error;
+      const meta = { id, date, path: '', thumb: `${base}_t.jpg`, w: full.w, h: full.h, size: full.blob.size + thumb.blob.size, caption: '', createdAt: Date.now() };
+      // 원본은 구글 드라이브의 "HaruPlanner 원본 사진" 폴더에 (드라이브를 연결했고 하루플래너 열쇠가 있을 때)
+      if (typeof HaruBackup !== 'undefined' && await HaruBackup.photoToDrive().catch(() => false)) {
+        try {
+          const f = await HaruBackup.drivePhotoPut(meta, new Uint8Array(await full.blob.arrayBuffer()));
+          return { ...meta, drive: f.id };
+        } catch (_) { /* 드라이브가 안 되면 지금처럼 Supabase 에 (나중에 자동으로 옮겨요) */ }
+      }
+      const a = await st.upload(`${base}.jpg`, full.blob, opt);
+      if (a.error) { st.remove([`${base}_t.jpg`]).catch(() => {}); throw a.error; }
+      return { ...meta, path: `${base}.jpg` };
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -81,6 +89,8 @@ const Photos = (() => {
     }
     paths.forEach((p) => delete urls[p]);
     saveUrls();
+    // 드라이브에 있는 원본도 지워요
+    if (typeof HaruBackup !== 'undefined') for (const p of list) if (p && p.drive) await HaruBackup.drivePhotoDelete(p.drive).catch(() => {});
   }
   const errText = (e) => {
     const m = String((e && (e.message || e.error || e.statusCode)) || e);
@@ -185,7 +195,7 @@ const Photos = (() => {
     const el = document.createElement('div');
     el.className = 'pv';
     document.body.appendChild(el);
-    viewer = { el, opts, idx: 0, busy: '' };
+    viewer = { el, opts, idx: 0, busy: '', note: {} };
     const list = opts.getList();
     const start = list.findIndex((p) => p.id === opts.startId);
     viewer.idx = start >= 0 ? start : 0;
@@ -225,18 +235,43 @@ const Photos = (() => {
         <button class="pv-b" data-pv="add" aria-label="사진 추가">${svg('cam')}</button>
       </div>
       <div class="pv-stage">
-        ${cur ? imgTag(cur.path, '', '') : `<div class="pv-empty">${svg('cam').replace('<svg', '<svg style="width:46px;height:46px;opacity:.6"')}<br>아직 사진이 없어요<br><button class="pv-b" style="width:auto;padding:0 18px;margin-top:10px;background:rgba(255,255,255,.14)" data-pv="add">사진 추가</button></div>`}
+        ${cur ? bigTag(cur) : `<div class="pv-empty">${svg('cam').replace('<svg', '<svg style="width:46px;height:46px;opacity:.6"')}<br>아직 사진이 없어요<br><button class="pv-b" style="width:auto;padding:0 18px;margin-top:10px;background:rgba(255,255,255,.14)" data-pv="add">사진 추가</button></div>`}
         ${list.length > 1 ? `<button class="pv-nav l" data-pv="prev" aria-label="이전">${svg('l')}</button><button class="pv-nav r" data-pv="next" aria-label="다음">${svg('r')}</button>` : ''}
-        ${viewer.busy ? `<div class="pv-busy">${viewer.busy}</div>` : ''}
+        ${viewer.busy ? `<div class="pv-busy">${viewer.busy}</div>` : cur && viewer.note[cur.id] ? `<div class="pv-busy">${viewer.note[cur.id]}</div>` : ''}
       </div>
       ${cur ? `<input class="pv-cap" maxlength="200" placeholder="한 줄 메모 (선택)" value="${String(cur.caption || '').replace(/"/g, '&quot;')}">` : ''}
       <div class="pv-strip">${list.map((p, i) => `<button class="pv-th ${i === viewer.idx ? 'on' : ''}" data-pv="pick" data-i="${i}">${imgTag(p.thumb || p.path)}</button>`).join('')}
         <button class="pv-th add" data-pv="add" aria-label="사진 추가">${svg('plus')}</button></div>`;
     hydrate(el);
+    if (cur && cur.drive) loadOriginal(cur);
     if (typing) { const c = el.querySelector('.pv-cap'); if (c) c.focus(); }
     const on = el.querySelector('.pv-th.on');
     if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
   }
+  // 크게 보기: 원본이 드라이브에 있으면 작은 사진을 먼저 보여 주고, 원본이 오면 바꿔요
+  const origOf = (p) => (typeof HaruBackup !== 'undefined' && HaruBackup.origCached(p)) || null;
+  function bigTag(p) {
+    if (!p.drive) return imgTag(p.path || p.thumb, '', '');
+    const u = origOf(p);
+    if (u) return `<img src="${u}" alt="" decoding="async" draggable="false">`;
+    return imgTag(p.thumb, 'pv-low', '').replace('<img ', `<img data-orig="${String(p.id).replace(/"/g, '&quot;')}" `);
+  }
+  function loadOriginal(p) {
+    if (typeof HaruBackup === 'undefined' || origOf(p)) return;
+    HaruBackup.photoOriginalUrl(p).then((u) => {
+      if (!viewer) return;
+      const img = viewer.el.querySelector(`img[data-orig="${CSS_ESC(p.id)}"]`);
+      if (img) { img.removeAttribute('data-photo'); img.classList.remove('pv-low'); img.src = u; }
+      if (viewer.note[p.id]) { delete viewer.note[p.id]; paint(); }
+    }).catch((e) => {
+      if (!viewer) return;
+      viewer.note[p.id] = e && e.code === 'need-key' ? '원본은 하루플래너 비밀번호를 넣으면 보여요 (설정 → 백업)' : '원본을 못 불러왔어요 · 작은 사진으로 보여요';
+      const cur = viewer.opts.getList()[viewer.idx];
+      if (cur && cur.id === p.id) paint();
+    });
+  }
+  const CSS_ESC = (s) => (window.CSS && window.CSS.escape ? window.CSS.escape(String(s)) : String(s).replace(/["\\]/g, '\\$&'));
+
   async function onClick(e) {
     const b = e.target.closest('[data-pv]');
     if (!b || !viewer) return;

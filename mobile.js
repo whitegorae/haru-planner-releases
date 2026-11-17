@@ -890,7 +890,7 @@ document.addEventListener('click', (e) => {
     case 'cs-cancel': CalSync.cancelWait(); break;
     case 'cs-sync': CalSync.syncNow(); break;
     case 'cs-disconnect': askConfirm('구글 캘린더 연결을 끊을까요?\n이미 가져온 일정은 그대로 남아요.', { okText: '연결 끊기', danger: true }).then((ok) => { if (ok) CalSync.disconnect(); }); break;
-    case 'bk-save': case 'bk-load': case 'bk-drive-connect': case 'bk-drive-check': case 'bk-drive-up':
+    case 'bk-key': case 'bk-save': case 'bk-load': case 'bk-drive-connect': case 'bk-drive-check': case 'bk-drive-up':
     case 'bk-drive-restore': case 'bk-drive-del': case 'bk-drive-off': case 'bk-auto':
       bkAction(a, el); break;
     case 'dc-enable': DevCal.enable().then((ok) => { if (ok) toast('폰 캘린더와 연동했어요'); }).catch((err) => toast(err.message)); break;
@@ -1350,8 +1350,8 @@ function calCardsHTML() {
     ${s ? `<div class="m-card m-pad m-cal"><b class="m-clog-h">삼성 캘린더 · 폰 캘린더</b>${s}
       <p class="m-muted small">${typeof DevCal !== 'undefined' && DevCal.available && typeof DevCal.serverGoogle === 'function' && DevCal.serverGoogle() ? '구글 계정 캘린더는 위 "구글 캘린더" 연동이 맡아요 (두 번 생기지 않게 여기서는 빼요).' : '구글 서버 연동을 켜기 전까지는 폰에 있는 구글 계정 캘린더도 여기서 맞춰요.'}</p></div>` : ''}</div>`;
 }
-// ---------- 백업 카드 (비밀번호로 암호화: 이 기기에 파일로 · 구글 드라이브 숨김 폴더로) ----------
-const bk = { drive: null, files: null, busy: '', error: '', waiting: false, loaded: false };
+// ---------- 백업 · 원본 사진 카드 (하루플래너 비밀번호로 암호화: 이 기기에 파일로 · 구글 드라이브 숨김 폴더로) ----------
+const bk = { drive: null, files: null, busy: '', error: '', waiting: false, loaded: false, keyAsked: false };
 const BK_KIND_NAMES = { tasks: '할 일', lists: '목록', ddays: '디데이', notes: '포스트잇', photos: '사진', sessions: '타이머 기록' };
 const bkSummary = (c) => Object.entries(BK_KIND_NAMES).filter(([k]) => c[k]).map(([k, n]) => `${n} ${c[k]}개`).join(' · ') || '새로 넣을 항목 없음';
 const bkCanSave = !ANDROID_APP; // 안드로이드 앱(웹뷰)은 파일 내려받기를 못 해요 → 드라이브로
@@ -1363,7 +1363,7 @@ async function bkLoad() {
     bk.files = bk.drive.connected ? (await HaruBackup.driveList()).files : null;
     if (bk.files) HaruBackup.setLiveFiles(bk.files);
     bk.error = '';
-    if (bk.drive.connected) bk.waiting = false;
+    if (bk.drive.connected) { bk.waiting = false; bkMoveRun(); }
   } catch (e) { bk.drive = { connected: false, notReady: /서버 준비/.test(e.message) }; bk.error = bk.drive.notReady ? '' : e.message; }
   bk.loaded = true;
   bkRefresh();
@@ -1372,21 +1372,42 @@ async function bkBusy(label, fn) {
   bk.busy = label; bk.error = ''; bkRefresh();
   try { return await fn(); } catch (e) { bk.error = e.message; toast(e.message); return null; } finally { bk.busy = ''; bkRefresh(); }
 }
-async function bkAskPw(title) {
-  const pw = await askPrompt(title, '', { password: true, placeholder: '비밀번호 (4자 이상)' });
-  if (pw == null) return null;
-  if (String(pw).length < 4) { await showAlert('비밀번호는 4자 이상이어야 해요'); return null; }
-  const again = await askPrompt('한 번 더 입력해 주세요', '', { password: true, placeholder: '같은 비밀번호' });
-  if (again == null) return null;
-  if (again !== pw) { await showAlert('두 비밀번호가 달라요. 다시 해 주세요.'); return null; }
-  return pw;
+// 하루플래너 열쇠: 이 기기에 없으면 하루플래너 비밀번호로 한 번 열어요 (로그인할 때 자동으로 열려서 보통은 안 물어봐요)
+async function bkEnsureKey(title) {
+  if (HaruBackup.keyReady()) return true;
+  let exists = true;
+  try { exists = await HaruBackup.keyExists(); } catch (e) { toast(e.message); return false; }
+  const pw = await askPrompt(title || '하루플래너 비밀번호를 넣어 주세요', '', { password: true, placeholder: '하루플래너에 로그인할 때 쓰는 비밀번호' });
+  if (pw == null) return false;
+  if (!exists) {
+    const again = await askPrompt('한 번 더 입력해 주세요', '', { password: true, placeholder: '같은 비밀번호' });
+    if (again == null) return false;
+    if (again !== pw) { await showAlert('두 비밀번호가 달라요. 다시 해 주세요.'); return false; }
+  }
+  try { await HaruBackup.keyUnlock(pw); } catch (e) {
+    if (e.code === 'bad-password') { await showAlert('비밀번호가 맞지 않아요.\n최근에 하루플래너 비밀번호를 바꿨다면 바꾸기 전 비밀번호로 한 번 해 보세요.'); return false; }
+    toast(e.message);
+    return false;
+  }
+  toast('열었어요. 이제 이 기기에서 원본 사진과 드라이브 백업을 쓸 수 있어요.');
+  bkRefresh();
+  bkMoveRun();
+  bkLiveSoon(true);
+  Photos.refreshViewer();
+  return true;
 }
 async function bkRestore(text) {
   if (!text) return;
   const head = HaruBackup.peek(text);
-  const pw = await askPrompt(`${new Date(head.at).toLocaleString('ko-KR')} 백업의 비밀번호`, '', { password: true, placeholder: '백업할 때 정한 비밀번호' });
-  if (pw == null) return;
-  const snap = await HaruBackup.unlock(text, pw);
+  let snap;
+  let usedPw = '';
+  try { snap = await HaruBackup.unlock(text); } catch (e) {
+    if (e.code !== 'need-password') throw e;
+    const pw = await askPrompt(`${new Date(head.at).toLocaleString('ko-KR')} 백업의 비밀번호`, '', { password: true, placeholder: head.wrap ? '이 백업을 만들 때의 하루플래너 비밀번호' : '백업할 때 정한 비밀번호' });
+    if (pw == null) return;
+    snap = await HaruBackup.unlock(text, pw);
+    usedPw = pw;
+  }
   const add = HaruBackup.merge(state.data, snap, { dry: true });
   if (!Object.values(add).some(Boolean)) { await showAlert('지금 데이터에 이미 다 있어요. 새로 넣을 항목이 없어요.'); return; }
   if (!(await askConfirm(`지금 없는 항목만 다시 넣어요 (지금 있는 건 바꾸거나 지우지 않아요).\n\n${bkSummary(add)}`, { okText: '되살리기' }))) return;
@@ -1395,10 +1416,10 @@ async function bkRestore(text) {
   HaruBackup.merge(state.data, snap);
   commit();
   let photoMsg = '';
-  if (newPhotos.length && bk.drive && bk.drive.connected) {
-    // 사진 파일 자체도 드라이브에서 받아 다시 넣어요
+  if (newPhotos.some((p) => p.path && !p.drive) && bk.drive && bk.drive.connected) {
+    // Supabase 에 원본이 있던 사진은 드라이브 백업 사본에서 파일을 다시 넣어요 (드라이브 원본은 그대로 있어요)
     try {
-      const r = await HaruBackup.restorePhotoFiles(newPhotos, [pw, HaruBackup.autoCfg().pw], (i, n) => { bk.busy = `사진 파일 되살리는 중… (${i}/${n})`; bkRefresh(); });
+      const r = await HaruBackup.restorePhotoFiles(newPhotos, [usedPw, HaruBackup.autoCfg().pw], (i, n) => { bk.busy = `사진 파일 되살리는 중… (${i}/${n})`; bkRefresh(); });
       photoMsg = r.ok ? ` · 사진 파일 ${r.ok}장` : '';
       if (r.missing || r.badPw) photoMsg += ` (사진 ${r.missing + r.badPw}장은 못 가져왔어요)`;
     } catch (e) { photoMsg = ` (사진 파일은 못 가져왔어요: ${e.message})`; }
@@ -1409,19 +1430,18 @@ async function bkRestore(text) {
 }
 async function bkAction(a, el) {
   const ver = (APP_VERSION || '').split('-')[0];
+  if (a === 'bk-key') { await bkEnsureKey(); return; }
   if (a === 'bk-save') {
-    const pw = await bkAskPw('백업 파일 비밀번호 정하기');
-    if (pw) await bkBusy('암호화하는 중…', async () => { const snap = HaruBackup.snapshot(state.data, ver); HaruBackup.saveFile(await HaruBackup.lock(snap, pw), HaruBackup.fileName(snap.at)); toast('백업 파일을 저장했어요'); });
+    if (await bkEnsureKey()) await bkBusy('암호화하는 중…', async () => { const snap = HaruBackup.snapshot(state.data, ver); HaruBackup.saveFile(await HaruBackup.lock(snap), HaruBackup.fileName(snap.at)); toast('백업 파일을 저장했어요'); });
   } else if (a === 'bk-load') {
     const text = await HaruBackup.pickFile();
     if (text) await bkBusy('되살리는 중…', () => bkRestore(text));
   } else if (a === 'bk-drive-connect') {
     await HaruBackup.driveConnect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }).then(() => { bk.waiting = true; bkRefresh(); }).catch((e) => toast(e.message));
-  } else if (a === 'bk-drive-check') { bk.loaded = false; bkLoad(); }
+  } else if (a === 'bk-drive-check') { bk.loaded = false; await bkLoad(); if (bk.drive && bk.drive.connected) bkEnsureKey('원본 사진과 드라이브 백업에 쓸 하루플래너 비밀번호를 넣어 주세요'); }
   else if (a === 'bk-drive-up') {
-    const pw = await bkAskPw('드라이브 백업 비밀번호 정하기');
-    if (!pw) return;
-    await bkBusy('드라이브에 올리는 중…', async () => { const snap = HaruBackup.snapshot(state.data, ver); await HaruBackup.driveUpload(await HaruBackup.lock(snap, pw), HaruBackup.fileName(snap.at)); toast('구글 드라이브에 백업했어요'); });
+    if (!(await bkEnsureKey())) return;
+    await bkBusy('드라이브에 올리는 중…', async () => { const snap = HaruBackup.snapshot(state.data, ver); await HaruBackup.driveUpload(await HaruBackup.lock(snap), HaruBackup.fileName(snap.at)); toast('구글 드라이브에 백업했어요'); });
     bkLoad();
   } else if (a === 'bk-drive-restore') {
     await bkBusy('드라이브에서 받는 중…', async () => bkRestore(await HaruBackup.driveDownload(el.dataset.id)));
@@ -1430,17 +1450,14 @@ async function bkAction(a, el) {
     await bkBusy('지우는 중…', () => HaruBackup.driveDelete(el.dataset.id));
     bkLoad();
   } else if (a === 'bk-drive-off') {
-    if (!(await askConfirm('구글 드라이브 백업 연결을 끊을까요?\n드라이브에 있는 백업 파일은 남아 있어요.', { okText: '연결 끊기' }))) return;
+    if (!(await askConfirm('구글 드라이브 연결을 끊을까요?\n드라이브에 있는 원본 사진과 백업 파일은 그대로 남아 있어요. 다시 연결할 때까지 원본 사진은 작은 사진으로 보여요.', { okText: '연결 끊기' }))) return;
     await bkBusy('연결 끊는 중…', () => HaruBackup.driveDisconnect());
     HaruBackup.setAuto(null);
     bkLoad();
   } else if (a === 'bk-auto') {
     if (HaruBackup.autoCfg().on) { HaruBackup.setAuto(null); toast('실시간 드라이브 백업을 껐어요'); bkRefresh(); return; }
-    const pw = await bkAskPw('실시간 백업 비밀번호 (다른 기기와 같은 비밀번호)');
-    if (!pw) { bkRefresh(); return; }
-    const okPw = await bkBusy('비밀번호 확인 중…', () => HaruBackup.checkLivePw(pw));
-    if (!okPw) { bkRefresh(); return; }
-    HaruBackup.setAuto({ on: true, pw, last: 0 });
+    if (!(await bkEnsureKey())) { bkRefresh(); return; }
+    HaruBackup.setAuto({ on: true, last: 0 });
     toast('실시간 드라이브 백업을 켰어요');
     bkRefresh();
     bkLiveSoon(true);
@@ -1452,36 +1469,59 @@ function bkLiveSoon(now) {
   HaruBackup.liveSoon(() => state.data, (APP_VERSION || '').split('-')[0]);
   if (now === true) HaruBackup.liveRun();
 }
-if (typeof HaruBackup !== 'undefined') HaruBackup.onLive(() => { const f = HaruBackup.liveFiles(); if (f) bk.files = f; bkRefresh(); });
-setTimeout(() => { bkLiveSoon(); setInterval(bkLiveSoon, 30 * 60 * 1000); }, 15 * 1000);
+// 예전에 Supabase 에 올린 원본 사진을 드라이브로 옮기기 (남은 게 있으면 이어서)
+let bkMoveTimer = 0;
+async function bkMoveRun() {
+  if (DEMO || typeof HaruBackup === 'undefined' || !Cloud.isActive() || !state.data) return;
+  clearTimeout(bkMoveTimer);
+  try { const left = await HaruBackup.photoMoveTick(); if (left > 0) bkMoveTimer = setTimeout(bkMoveRun, 4000); } catch (_) { /* 다음에 */ }
+}
+if (typeof HaruBackup !== 'undefined') {
+  HaruBackup.onLive(() => { const f = HaruBackup.liveFiles(); if (f) bk.files = f; bkRefresh(); });
+  HaruBackup.photoMoveSetup(() => state.data, () => { if (state.data) commit(); });
+}
+async function bkStartup() {
+  if (DEMO || typeof HaruBackup === 'undefined' || !Cloud.isActive() || !state.data) return;
+  if (!HaruBackup.keyReady() && !bk.keyAsked && (await HaruBackup.driveOn())) {
+    bk.keyAsked = true;
+    await bkEnsureKey('원본 사진과 드라이브 백업을 열려면 하루플래너 비밀번호를 한 번 넣어 주세요');
+  }
+  bkMoveRun();
+  bkLiveSoon();
+}
+setTimeout(() => { bkStartup(); setInterval(() => { bkLiveSoon(); bkMoveRun(); }, 30 * 60 * 1000); }, 15 * 1000);
 // 폰은 앱을 내리면 멈출 수 있어서, 내리기 직전에 모아 둔 걸 바로 올려요
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && typeof HaruBackup !== 'undefined' && HaruBackup.autoCfg().on && Cloud.isActive()) HaruBackup.liveRun(); });
 function backupCardHTML() {
   if (DEMO || typeof HaruBackup === 'undefined') return '';
   const dis = bk.busy ? 'disabled' : '';
   const when = (s) => new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const keyRow = Cloud.isActive() && !HaruBackup.keyReady()
+    ? `<button class="m-btn primary" data-a="bk-key" ${dis}>하루플래너 비밀번호로 열기</button><p class="m-muted small">이 기기는 아직 열쇠가 없어요. 로그인할 때 쓰는 비밀번호를 한 번 넣으면 원본 사진과 백업을 쓸 수 있어요.</p>`
+    : '';
   let drive;
   if (!bk.loaded) { setTimeout(bkLoad, 0); drive = '<p class="m-muted">구글 드라이브 연결 확인 중…</p>'; }
-  else if (bk.drive && bk.drive.notReady) drive = '<p class="m-muted">구글 드라이브 백업: 서버 준비가 아직 안 됐어요.</p>';
+  else if (bk.drive && bk.drive.notReady) drive = '<p class="m-muted">구글 드라이브: 서버 준비가 아직 안 됐어요.</p>';
   else if (!bk.drive || !bk.drive.connected) {
     drive = `<button class="m-btn primary" data-a="bk-drive-connect" ${dis}>구글 드라이브 연결</button>
       ${bk.waiting ? '<button class="m-btn" data-a="bk-drive-check">"허용" 눌렀어요 · 연결 확인</button>' : ''}
-      <p class="m-muted small">드라이브의 <b>앱 전용 숨김 폴더</b>만 쓰는 권한이에요. 내 드라이브의 다른 파일은 보지 못하고, 백업도 드라이브 화면에 안 보여요.</p>`;
+      <p class="m-muted small">연결하면 <b>사진 원본</b>을 내 구글 드라이브에 보관해요 (Supabase 에는 달력용 작은 사진만). 드라이브의 <b>앱 전용 숨김 폴더</b>만 쓰는 권한이라 다른 파일은 보지 못하고, 드라이브 화면에도 안 보여요.</p>`;
   } else {
     const auto = HaruBackup.autoCfg();
     const files = HaruBackup.backupFiles(bk.files);
-    const nPh = HaruBackup.photoCount(bk.files);
+    const ps = HaruBackup.photoStats(state.data);
     const ls = HaruBackup.liveState();
     const liveNote = !auto.on ? '' : ls.busy ? ls.busy : ls.err ? '' : auto.liveAt ? `마지막으로 올린 때 ${when(auto.liveAt)}` : '곧 처음으로 올려요';
     drive = `<p class="m-muted">구글 드라이브 연결됨: <b>${esc(bk.drive.email || '')}</b></p>
-      <label class="m-set"><span>실시간 드라이브 백업<small class="m-muted small" style="display:block">할 일 · 포스트잇 · 사진이 바뀌면 몇 초 안에 드라이브로 자동으로 올라가요. 사진 파일도 같이 암호화해서 올려요. 하루 한 번 보관본도 남겨요 (최근 14개).${liveNote ? `<br><b>${esc(liveNote)}</b>` : ''}${auto.on && ls.err ? `<br><span class="m-err">${esc(ls.err)}</span>` : ''}</small></span><input type="checkbox" data-a="bk-auto" ${auto.on ? 'checked' : ''} ${dis}></label>
+      <p class="m-muted small"><b>원본 사진</b> · 드라이브에 ${ps.onDrive}장${ps.waiting ? ` · <b>${HaruBackup.keyReady() ? '옮기는 중' : '옮길 차례'} ${ps.waiting}장</b>` : ''}<br>원본은 드라이브의 "HaruPlanner 원본 사진" 폴더에, 달력용 작은 사진만 Supabase 에 둬요.</p>
+      <label class="m-set"><span>실시간 드라이브 백업<small class="m-muted small" style="display:block">할 일 · 포스트잇 · 사진이 바뀌면 몇 초 안에 드라이브로 자동으로 올라가요. 하루 한 번 보관본도 남겨요 (최근 14개).${liveNote ? `<br><b>${esc(liveNote)}</b>` : ''}${auto.on && ls.err ? `<br><span class="m-err">${esc(ls.err)}</span>` : ''}</small></span><input type="checkbox" data-a="bk-auto" ${auto.on ? 'checked' : ''} ${dis}></label>
       <div class="m-row2"><button class="m-btn" data-a="bk-drive-up" ${dis}>따로 백업 하나 더</button><button class="m-btn" data-a="bk-drive-off" ${dis}>연결 끊기</button></div>
-      ${nPh ? `<p class="m-muted small">드라이브에 사진 파일 ${nPh}장 보관 중</p>` : ''}
       ${files.length ? `<div class="m-bk-list">${files.map((f) => `<div class="m-bk-item"><span>${f.live ? '<b>실시간 최신본</b> ' : ''}${when(f.when)} <small class="m-muted">${Math.max(1, Math.round(f.size / 1024))}KB</small></span>
         <button class="m-btn sm" data-a="bk-drive-restore" data-id="${esc(f.id)}" ${dis}>되살리기</button>${f.live ? '' : `<button class="m-btn sm" data-a="bk-drive-del" data-id="${esc(f.id)}" ${dis} aria-label="지우기">${icon('trash')}</button>`}</div>`).join('')}</div>` : '<p class="m-muted">드라이브에 아직 백업이 없어요.</p>'}`;
   }
-  return `<div class="m-card m-pad m-bk" id="mBackup"><b class="m-clog-h">백업</b>
-    <p class="m-muted">할 일 · 목록 · 디데이 · 포스트잇 · 사진 목록 · 타이머 기록을 <b>내가 정한 비밀번호로 암호화</b>해서 보관해요. 비밀번호 없이는 아무도(구글 · 개발자 포함) 열 수 없어요. <b>비밀번호를 잊으면 되살릴 수 없어요.</b></p>
+  return `<div class="m-card m-pad m-bk" id="mBackup"><b class="m-clog-h">백업 · 원본 사진</b>
+    <p class="m-muted">할 일 · 목록 · 디데이 · 포스트잇 · 사진 · 타이머 기록을 <b>하루플래너 비밀번호로 암호화</b>해서 보관해요. 비밀번호 없이는 아무도(구글 · 개발자 포함) 열 수 없어요.</p>
+    ${keyRow}
     <div class="m-row2">${bkCanSave ? `<button class="m-btn" data-a="bk-save" ${dis}>이 기기에 파일 저장</button>` : ''}<button class="m-btn" data-a="bk-load" ${dis}>파일에서 되살리기</button></div>
     ${bkCanSave ? '' : '<p class="m-muted small">안드로이드 앱에서는 파일로 저장할 수 없어요. 아래 구글 드라이브 백업을 쓰거나 PC에서 저장해 주세요.</p>'}
     <div class="m-bk-sep"></div>${drive}

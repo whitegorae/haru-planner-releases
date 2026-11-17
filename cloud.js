@@ -243,10 +243,18 @@ const Cloud = (() => {
     if (error) throw error;
     try { localStorage.removeItem(RECOVERY_FLAG); } catch (_) { /* 무시 */ }
     user = data.user;
+    keyAfterAuth(password);
     return user;
+  }
+  // 하루플래너 열쇠(원본 사진 · 드라이브 백업용)를 이 비밀번호로 열어서 이 기기에 기억해요 (실패해도 로그인은 그대로)
+  let pendingPw = '';
+  function keyAfterAuth(password) {
+    pendingPw = '';
+    if (typeof HaruBackup !== 'undefined' && password) HaruBackup.keyOnLogin(password).catch(() => {});
   }
   async function signOut() {
     if (typeof Photos !== 'undefined') Photos.clearCache(); // 사진 보기 주소도 이 기기에서 지워요
+    if (typeof HaruBackup !== 'undefined') HaruBackup.clearOriginals();
     stop();
     try { await client.auth.signOut(); } catch (_) { /* 무시 */ }
     user = null;
@@ -263,7 +271,7 @@ const Cloud = (() => {
       e.code = 'user_already_exists';
       throw e;
     }
-    if (data.session) user = data.user;
+    if (data.session) { user = data.user; keyAfterAuth(password); } else pendingPw = password; // 메일 확인 뒤에 열쇠를 만들어요
     return { needsConfirm: !data.session, user: data.user };
   }
   async function resendSignup(email) {
@@ -276,7 +284,7 @@ const Cloud = (() => {
     let lastErr = null;
     for (const type of types) {
       const { data, error } = await client.auth.verifyOtp({ email: email.trim(), token: token.trim(), type });
-      if (!error) { user = data.user; return user; }
+      if (!error) { user = data.user; if (kind !== 'recovery' && pendingPw) keyAfterAuth(pendingPw); return user; }
       lastErr = error;
     }
     throw lastErr;
@@ -291,6 +299,8 @@ const Cloud = (() => {
     if (error) throw error;
     try { localStorage.removeItem(RECOVERY_FLAG); } catch (_) { /* 무시 */ }
     user = data.user;
+    // 같은 열쇠를 새 비밀번호로 다시 잠가요 (예전 원본 사진 · 백업도 계속 열려요)
+    if (typeof HaruBackup !== 'undefined') HaruBackup.keyOnPasswordChange(password).catch(() => {});
     return user;
   }
   // 메일 링크로 앱이 열렸을 때: haruplanner://auth-callback?code=... → 로그인
@@ -308,6 +318,7 @@ const Cloud = (() => {
     user = data.user;
     let recovery = data.redirectType === 'recovery';
     try { if (localStorage.getItem(RECOVERY_FLAG) === '1') recovery = true; } catch (_) { /* 무시 */ }
+    if (!recovery && pendingPw) keyAfterAuth(pendingPw); // 가입 확인 메일 링크로 들어왔어요
     return { ok: true, user, recovery };
   }
   // 계정 삭제: DB 함수 delete_my_account() 가 본인 일정·설정과 계정을 함께 지워요
