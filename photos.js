@@ -260,7 +260,7 @@ const Photos = (() => {
       });
     } else if (k === 'del') {
       const cur = opts.getList()[viewer.idx];
-      if (!cur || !confirm('이 사진을 지울까요? 되돌릴 수 없어요.')) return;
+      if (!cur || !(await askConfirm('이 사진을 지울까요?\n되돌릴 수 없어요.', { okText: '지우기', danger: true }))) return;
       viewer.busy = '지우는 중…';
       paint();
       try { await opts.onDelete(cur); } catch (err) { alertText(errText(err)); }
@@ -279,7 +279,7 @@ const Photos = (() => {
     if (e.target && e.target.classList && e.target.classList.contains('pv-cap')) { if (e.key === 'Enter') e.target.blur(); if (e.key !== 'Escape') return; }
     if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); closeViewer(); } else if (e.key === 'ArrowLeft') { e.stopPropagation(); go(-1); } else if (e.key === 'ArrowRight') { e.stopPropagation(); go(1); }
   }
-  const alertText = (m) => setTimeout(() => alert(m), 0);
+  const alertText = (m) => setTimeout(() => showAlert(m), 0);
   // 다른 기기에서 사진이 바뀌면 열려 있는 창도 다시 그려요
   function refreshViewer() { if (viewer) paint(); }
 

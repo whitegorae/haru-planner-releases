@@ -832,10 +832,12 @@ document.addEventListener('click', (e) => {
     case 'list-back': state.listView = null; render(); break;
     case 'list-add': {
       if (!canEdit()) break;
-      const name = (prompt('새 목록 이름') || '').trim();
-      if (!name) break;
-      state.data.lists.push({ id: uid(), name, color: PRESET_COLORS[state.data.lists.length % PRESET_COLORS.length] });
-      commit();
+      askPrompt('새 목록 이름', '', { okText: '만들기' }).then((v) => {
+        const name = String(v || '').trim();
+        if (!name) return;
+        state.data.lists.push({ id: uid(), name, color: PRESET_COLORS[state.data.lists.length % PRESET_COLORS.length] });
+        commit();
+      });
       break;
     }
     // 디데이
@@ -874,8 +876,10 @@ document.addEventListener('click', (e) => {
     }
     case 'resync': if (Cloud.isActive()) { Cloud.resync(); toast('서버와 다시 맞추는 중이에요'); } else startCloud(); break;
     case 'logout':
-      if (!confirm('로그아웃할까요? 이 폰에 저장된 일정 사본도 지워져요.')) break;
-      Cloud.signOut().then(() => { try { localStorage.removeItem(CACHE_KEY); } catch (_) { /* 무시 */ } state.data = null; widgetSignedOut(); loginScreen(); });
+      askConfirm('로그아웃할까요?\n이 폰에 저장된 일정 사본도 지워져요.', { okText: '로그아웃', danger: true }).then((ok) => {
+        if (!ok) return;
+        Cloud.signOut().then(() => { try { localStorage.removeItem(CACHE_KEY); } catch (_) { /* 무시 */ } state.data = null; widgetSignedOut(); loginScreen(); });
+      });
       break;
     case 'go-login': location.href = location.pathname; break;
     case 'apk-update': installApk(); break;
@@ -884,7 +888,7 @@ document.addEventListener('click', (e) => {
     case 'cs-connect': CalSync.connect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }, 'inbox').catch((err) => toast(err.message)); break;
     case 'cs-cancel': CalSync.cancelWait(); break;
     case 'cs-sync': CalSync.syncNow(); break;
-    case 'cs-disconnect': if (confirm('구글 캘린더 연결을 끊을까요? 이미 가져온 일정은 그대로 남아요.')) CalSync.disconnect(); break;
+    case 'cs-disconnect': askConfirm('구글 캘린더 연결을 끊을까요?\n이미 가져온 일정은 그대로 남아요.', { okText: '연결 끊기', danger: true }).then((ok) => { if (ok) CalSync.disconnect(); }); break;
     case 'dc-enable': DevCal.enable().then((ok) => { if (ok) toast('폰 캘린더와 연동했어요'); }).catch((err) => toast(err.message)); break;
     case 'dc-disable': DevCal.disable(); toast('폰 캘린더 연동을 껐어요'); break;
     case 'dc-sync': DevCal.sync(); break;
@@ -916,11 +920,14 @@ document.addEventListener('click', (e) => {
     case 'ts-delete-series': {
       const t0 = taskById(taskSheet.id);
       const list = seriesOf(t0);
-      if (!t0 || list.length < 2 || !canEdit() || !confirm(`매년 반복 일정 ${list.length}개를 모두 지울까요?`)) break;
-      closeSheet({ silent: true });
-      taskSheet = null;
-      const ids = new Set(list.map((x) => x.id));
-      withUndo(`"${t0.title}" 반복 일정 ${list.length}개를 지웠어요`, () => { state.data.tasks = state.data.tasks.filter((x) => !ids.has(x.id)); });
+      if (!t0 || list.length < 2 || !canEdit()) break;
+      askConfirm(`매년 반복 일정 ${list.length}개를 모두 지울까요?`, { okText: '모두 지우기', danger: true }).then((ok) => {
+        if (!ok) return;
+        closeSheet({ silent: true });
+        taskSheet = null;
+        const ids = new Set(list.map((x) => x.id));
+        withUndo(`"${t0.title}" 반복 일정 ${list.length}개를 지웠어요`, () => { state.data.tasks = state.data.tasks.filter((x) => !ids.has(x.id)); });
+      });
       break;
     }
     // 날짜 시트

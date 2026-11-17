@@ -4,6 +4,64 @@
  * 메인 화면과 위젯이 같이 쓰는 코드: 날짜, 색상 변환, 테마 계산, 공휴일
  * ========================================================================= */
 
+// ---------- 확인 · 알림 · 입력 창 (윈도우 기본 창 대신 하루플래너 색으로) ----------
+// askConfirm('지울까요?', { okText: '지우기', danger: true }) → Promise<boolean>
+// showAlert('메시지') → Promise<void>
+// askPrompt('새 목록 이름', '기본값') → Promise<string|null>
+const HaruDialog = (() => {
+  const CSS = `
+  .hd-back{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:12px;background:var(--backdrop,rgba(30,20,30,.35));animation:hdFade .12s ease-out}
+  .hd{width:min(360px,100%);background:var(--panel,#fff);color:var(--text,#4b3f4c);border-radius:22px;padding:20px 20px 16px;
+    box-shadow:0 14px 40px rgba(0,0,0,.28);font-family:var(--font-main,"Malgun Gothic",sans-serif);animation:hdPop .16s cubic-bezier(.2,.9,.3,1.25)}
+  .hd-msg{font-size:16.5px;line-height:1.55;white-space:pre-line;word-break:keep-all;margin:2px 2px 16px}
+  .hd-in{width:100%;height:42px;border-radius:13px;border:2px solid var(--border,#eadfe4);background:var(--bg,#fff9f4);color:var(--text,#4b3f4c);
+    padding:0 12px;font:inherit;font-size:16px;margin:-4px 0 16px;outline:none;box-sizing:border-box}
+  .hd-in:focus{border-color:var(--accent,#ff8fab)}
+  .hd-row{display:flex;justify-content:flex-end;gap:8px}
+  .hd-btn{height:40px;min-width:76px;padding:0 18px;border:0;border-radius:999px;font:inherit;font-size:15.5px;cursor:pointer;background:var(--hover,#f6eef1);color:var(--text-2,#7c6f7f)}
+  .hd-btn:hover{filter:brightness(.97)}
+  .hd-btn.ok{background:var(--accent,#ff8fab);color:#fff}
+  .hd-btn.ok.danger{background:#e5556b}
+  @keyframes hdFade{from{opacity:0}} @keyframes hdPop{from{opacity:0;transform:scale(.94)}}`;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function open(message, { okText = '확인', cancelText = '취소', danger = false, input = null, alertOnly = false } = {}) {
+    if (!document.getElementById('hdCss')) { const s = document.createElement('style'); s.id = 'hdCss'; s.textContent = CSS; document.head.appendChild(s); }
+    return new Promise((resolve) => {
+      const back = document.createElement('div');
+      back.className = 'hd-back';
+      back.innerHTML = `<div class="hd" role="dialog" aria-modal="true"><div class="hd-msg">${esc(message)}</div>
+        ${input !== null ? `<input class="hd-in" value="${esc(input)}" autocomplete="off" spellcheck="false">` : ''}
+        <div class="hd-row">${alertOnly ? '' : `<button class="hd-btn no">${esc(cancelText)}</button>`}<button class="hd-btn ok ${danger ? 'danger' : ''}">${esc(okText)}</button></div></div>`;
+      const inp = back.querySelector('.hd-in');
+      const done = (ok) => {
+        document.removeEventListener('keydown', onKey, true);
+        back.remove();
+        resolve(input !== null ? (ok ? inp.value : null) : alertOnly ? undefined : ok);
+      };
+      const onKey = (e) => {
+        if (e.isComposing) return;
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+      };
+      back.addEventListener('click', (e) => {
+        if (e.target.closest('.hd-btn.ok')) done(true);
+        else if (e.target.closest('.hd-btn.no') || e.target === back) done(false);
+      });
+      back.addEventListener('pointerdown', (e) => e.stopPropagation()); // 뒤의 팝오버 · 창이 "바깥 클릭"으로 닫히지 않게
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(back);
+      setTimeout(() => (inp || back.querySelector('.hd-btn.ok')).focus(), 30);
+    });
+  }
+  return {
+    confirm: (msg, o = {}) => open(msg, o),
+    alert: (msg, o = {}) => open(msg, { ...o, alertOnly: true }),
+    prompt: (msg, def = '', o = {}) => open(msg, { ...o, input: def }),
+  };
+})();
+const askConfirm = HaruDialog.confirm;
+const showAlert = HaruDialog.alert;
+const askPrompt = HaruDialog.prompt;
+
 // ---------- 날짜 ----------
 const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
