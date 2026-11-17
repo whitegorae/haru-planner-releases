@@ -29,6 +29,14 @@ const DevMode = (() => {
     if (d && typeof HaruBackup !== 'undefined' && HaruBackup.driveUsage) {
       try { d = { ...d, drive: await HaruBackup.driveUsage() }; } catch (e) { d = { ...d, drive: { error: (e && e.message) || String(e) } }; }
     }
+    // 사용자별 사용량: Supabase(계정 · 사진 저장소 · 할 일) + 드라이브(각자 연결한 드라이브)
+    if (d) {
+      const [sb, dr] = await Promise.all([
+        Cloud.client().rpc('admin_users').then((r) => (!r.error && Array.isArray(r.data) ? r.data : null), () => null),
+        typeof HaruBackup !== 'undefined' && HaruBackup.driveAdminUsage ? HaruBackup.driveAdminUsage().then((r) => (r && Array.isArray(r.users) ? r.users : null), () => null) : Promise.resolve(null),
+      ]);
+      d = { ...d, people: mergePeople(sb, dr) };
+    }
     busy = false;
     at = Date.now();
     const changed = JSON.stringify(d) !== JSON.stringify(data) || uid !== id;
@@ -43,6 +51,61 @@ const DevMode = (() => {
   const size = (b) => (b >= 1099511627776 ? `${(b / 1099511627776).toFixed(2)} TB` : b >= 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`);
   const num = (n) => Number(n || 0).toLocaleString('ko-KR');
   const pct = (a, b) => Math.min(100, (a / b) * 100);
+
+  // 사용자별로 합치기: Supabase 계정 목록(sb) + 드라이브 사용량(dr). 둘 중 하나만 있어도 보여줘요
+  function mergePeople(sb, dr) {
+    if (!sb && !dr) return null;
+    const byId = new Map();
+    for (const u of sb || []) byId.set(u.id, { id: u.id, email: u.email || '', created: u.created_at, last: u.last_sign_in_at, sbBytes: Number(u.storage_bytes) || 0, sbFiles: Number(u.storage_files) || 0, events: Number(u.events) || 0, meta: Number(u.meta) || 0, drive: null });
+    for (const x of dr || []) {
+      const p = byId.get(x.user_id) || { id: x.user_id, email: '', sbBytes: 0, sbFiles: 0, events: 0, meta: 0 };
+      p.drive = x;
+      byId.set(x.user_id, p);
+    }
+    const list = [...byId.values()].map((p) => ({ ...p, total: (p.drive && !p.drive.error ? Number(p.drive.bytes) || 0 : 0) + p.sbBytes }));
+    list.sort((a, b) => b.total - a.total || String(a.email).localeCompare(String(b.email)));
+    return { list, hasSb: !!sb, hasDrive: !!dr };
+  }
+
+  // 모든 사용자의 사용량: 사람마다 한 묶음 (많이 쓴 순서)
+  function peopleHtml(pp, e) {
+    if (!pp || !pp.list.length) return '';
+    const allDrive = pp.list.reduce((s, p) => s + (p.drive && !p.drive.error ? Number(p.drive.bytes) || 0 : 0), 0);
+    const allSb = pp.list.reduce((s, p) => s + p.sbBytes, 0);
+    const ymdOf = (iso) => { if (!iso) return '-'; const t = new Date(iso); return `${t.getFullYear()}.${t.getMonth() + 1}.${t.getDate()}`; };
+    const share = (b) => (allDrive > 0 ? pctText(b / allDrive) : '0%');
+    const line = (label, x) => (x && x.n ? `<span>${label}</span><b>${num(x.n)}개 · ${size(Number(x.bytes) || 0)}</b>` : '');
+    const one = (p) => {
+      const dr = p.drive;
+      const k = (dr && dr.kinds) || {};
+      const driveRows = !dr
+        ? '<span>하루플래너가 쓰는 양</span><b>드라이브 연결 안 함</b>'
+        : dr.error
+          ? `<span>하루플래너가 쓰는 양</span><b>${e(dr.error)}</b>`
+          : `<span>하루플래너가 쓰는 양</span><b>${size(Number(dr.bytes) || 0)} · 전체 사용자 중 ${share(Number(dr.bytes) || 0)}</b>
+            ${line('원본 사진', k.orig)}
+            ${line('백업 (실시간 · 날짜별)', k.backups)}
+            ${line('사진 백업 사본', k.photoCopies)}
+            ${line('기타', k.other)}`;
+      return `<div class="dev-user">
+        <div class="dev-user-h"><b>${e(p.email || '(이메일 없음)')}</b><span>가입 ${ymdOf(p.created)} · 최근 로그인 ${ymdOf(p.last)}</span></div>
+        <div class="dev-grid">
+          ${driveRows}
+          ${pp.hasSb ? `<span>Supabase 사진 저장소</span><b>${num(p.sbFiles)}개 · ${size(p.sbBytes)}</b>
+          <span>할 일 · 일정 / 목록 · 설정</span><b>${num(p.events)}줄 / ${num(p.meta)}줄</b>` : ''}
+          <span>연결한 계정</span><b>${dr && dr.email ? e(dr.email) : '-'}</b>
+        </div>
+      </div>`;
+    };
+    return `<p class="dev-sub dev-sub2">모든 사용자의 사용량 · ${num(pp.list.length)}명 (많이 쓴 순서)</p>
+      <div class="dev-grid">
+        <span>드라이브 합계 (하루플래너)</span><b>${size(allDrive)}</b>
+        ${pp.hasSb ? `<span>Supabase 사진 저장소 합계</span><b>${size(allSb)}</b>` : ''}
+      </div>
+      ${pp.list.map(one).join('')}`;
+  }
+  // 아주 작은 비율은 0.000% 대신 "0.001% 미만"
+  const pctText = (r) => { const p = r * 100; if (p <= 0) return '0%'; if (p < 0.001) return '0.001% 미만'; return `${p.toFixed(p < 0.1 ? 3 : p < 10 ? 1 : 0)}%`; };
 
   // 구글 드라이브: 원본 사진 · 백업을 보관하는 곳 (관리자 본인 드라이브 기준)
   function driveHtml(dr, bar, e) {
@@ -59,7 +122,7 @@ const DevMode = (() => {
     return `${head}
       ${q && q.limit ? bar('드라이브 전체 (구글 계정 저장 공간)', Number(q.usage) || 0, Number(q.limit), size) : q ? `<div class="dev-grid"><span>드라이브 전체 사용량</span><b>${size(Number(q.usage) || 0)} (한도 없음)</b></div>` : ''}
       <div class="dev-grid">
-        <span>하루플래너가 쓰는 양</span><b>${size(used)}${q && q.usage ? ` · 전체의 ${((used / q.usage) * 100).toFixed(used / q.usage < 0.001 ? 3 : 1)}%` : ''}</b>
+        <span>하루플래너가 쓰는 양</span><b>${size(used)}${q && q.usage ? ` · 전체의 ${pctText(used / q.usage)}` : ''}</b>
         ${line('원본 사진', k.orig)}
         ${line('백업 (실시간 · 날짜별)', k.backups)}
         ${line('사진 백업 사본', k.photoCopies)}
@@ -99,6 +162,7 @@ const DevMode = (() => {
       </div>
       <p class="dev-note">전송량(Egress, 무료 5GB/월)은 서버 안에서 읽을 수 없어요 → Supabase 대시보드의 Usage 에서 확인해요.</p>
       ${driveHtml(d.drive, bar, e)}
+      ${peopleHtml(d.people, e)}
       <button class="dev-btn" data-dev="refresh">다시 읽기</button>
       <details class="dev-log"><summary>지금까지 업데이트 내역 전체 (${all.length}개 버전)</summary>
         ${all.map((v) => `<div class="dev-v"><b>${e(v.v)}</b><span>${e(v.date || '')}</span><ul>${v.items.map((s) => `<li>${e(s)}</li>`).join('')}</ul></div>`).join('')}

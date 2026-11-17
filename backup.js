@@ -304,6 +304,7 @@ const HaruBackup = (() => {
   }
   const driveList = () => drive('list');
   const driveUsage = () => drive('usage'); // 개발자 모드: 드라이브 사용량
+  const driveAdminUsage = () => drive('admin-usage'); // 개발자 모드(관리자만): 모든 사용자의 드라이브 사용량
   const driveUpload = (text, name) => drive('upload', { name: name || fileName(), content: text });
   const drivePut = (text, name) => drive('put', { name, content: text });
   const driveDownload = (id) => drive('download', { id }).then((r) => r.content);
@@ -614,7 +615,7 @@ const HaruBackup = (() => {
   return {
     snapshot, lock, unlock, peek, merge, counts, fileName, saveFile, pickFile,
     keyReady, keyExists, keyUnlock, keyOnLogin, keyOnPasswordChange, forgetKey,
-    driveStatus, driveOn, driveList, driveUsage, driveUpload, drivePut, driveDownload, driveDelete, driveDisconnect, driveConnect,
+    driveStatus, driveOn, driveList, driveUsage, driveAdminUsage, driveUpload, drivePut, driveDownload, driveDelete, driveDisconnect, driveConnect,
     lockPhoto, unlockPhoto, photoName, restorePhotoFiles, isLive, isDaily, isPhotoFile, isOrigFile, LIVE_NAME,
     photoToDrive, drivePhotoPut, drivePhotoDelete, photoOriginalUrl, origCached, clearOriginals, photoMoveSetup, photoMoveTick, photoStats,
     autoCfg, setAuto, autoTick, liveSoon, liveRun, liveOnce, liveState, onLive, liveFiles, setLiveFiles, backupFiles, photoCount, KINDS,

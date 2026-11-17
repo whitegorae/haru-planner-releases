@@ -435,6 +435,11 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .dev-h span, .dev-sub, .dev-note, .dev-row small { font-family: var(--font-sub); color: var(--text-3); font-size: 14px; }
 .dev-sub { margin: 4px 0 12px; }
 .dev-sub2 { margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--border); }
+.dev-user { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--text) 5%, transparent); }
+.dev-user-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin-bottom: 6px; }
+.dev-user-h b { font-weight: normal; word-break: break-all; }
+.dev-user-h span { font-family: var(--font-sub); font-size: 13px; color: var(--text-3); }
+.dev-user .dev-grid { margin: 0; }
 .dev-row { margin: 10px 0; }
 .dev-row-h { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; }
 .dev-row-h b { font-weight: normal; color: var(--text-2); font-family: var(--font-sub); }
