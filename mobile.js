@@ -186,7 +186,7 @@ function saveCacheSoon() {
 }
 function loadCache() { try { return normalize(JSON.parse(localStorage.getItem(CACHE_KEY))); } catch (_) { return null; } }
 function save() {
-  if (!DEMO && Cloud.isActive()) { Cloud.saveDevice(S()); Cloud.schedulePush(); }
+  if (!DEMO && Cloud.isActive()) { Cloud.saveDevice(S()); Cloud.schedulePush(); bkLiveSoon(); }
   saveCacheSoon();
   if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 폰 캘린더로도 보내요
 }
@@ -1136,6 +1136,7 @@ function onRemote() {
   if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 다른 기기에서 바꾼 것도 폰 캘린더로
   Photos.refreshViewer();
   saveCacheSoon();
+  bkLiveSoon(); // 다른 기기에서 바꾼 것도 드라이브로
   if (taskSheet && taskSheet.mode === 'edit' && !taskById(taskSheet.id)) { closeSheet({ silent: true }); taskSheet = null; toast('다른 기기에서 이 할 일을 지웠어요'); }
 }
 async function startCloud() {
@@ -1360,6 +1361,7 @@ async function bkLoad() {
   try {
     bk.drive = await HaruBackup.driveStatus();
     bk.files = bk.drive.connected ? (await HaruBackup.driveList()).files : null;
+    if (bk.files) HaruBackup.setLiveFiles(bk.files);
     bk.error = '';
     if (bk.drive.connected) bk.waiting = false;
   } catch (e) { bk.drive = { connected: false, notReady: /서버 준비/.test(e.message) }; bk.error = bk.drive.notReady ? '' : e.message; }
@@ -1388,9 +1390,22 @@ async function bkRestore(text) {
   const add = HaruBackup.merge(state.data, snap, { dry: true });
   if (!Object.values(add).some(Boolean)) { await showAlert('지금 데이터에 이미 다 있어요. 새로 넣을 항목이 없어요.'); return; }
   if (!(await askConfirm(`지금 없는 항목만 다시 넣어요 (지금 있는 건 바꾸거나 지우지 않아요).\n\n${bkSummary(add)}`, { okText: '되살리기' }))) return;
+  const havePh = new Set((state.data.photos || []).map((p) => p.id));
+  const newPhotos = (snap.data.photos || []).filter((p) => p && p.id && !havePh.has(p.id));
   HaruBackup.merge(state.data, snap);
   commit();
-  toast(`되살렸어요: ${bkSummary(add)}`);
+  let photoMsg = '';
+  if (newPhotos.length && bk.drive && bk.drive.connected) {
+    // 사진 파일 자체도 드라이브에서 받아 다시 넣어요
+    try {
+      const r = await HaruBackup.restorePhotoFiles(newPhotos, [pw, HaruBackup.autoCfg().pw], (i, n) => { bk.busy = `사진 파일 되살리는 중… (${i}/${n})`; bkRefresh(); });
+      photoMsg = r.ok ? ` · 사진 파일 ${r.ok}장` : '';
+      if (r.missing || r.badPw) photoMsg += ` (사진 ${r.missing + r.badPw}장은 못 가져왔어요)`;
+    } catch (e) { photoMsg = ` (사진 파일은 못 가져왔어요: ${e.message})`; }
+    Photos.clearCache();
+    render();
+  }
+  toast(`되살렸어요: ${bkSummary(add)}${photoMsg}`);
 }
 async function bkAction(a, el) {
   const ver = (APP_VERSION || '').split('-')[0];
@@ -1420,19 +1435,27 @@ async function bkAction(a, el) {
     HaruBackup.setAuto(null);
     bkLoad();
   } else if (a === 'bk-auto') {
-    if (HaruBackup.autoCfg().on) { HaruBackup.setAuto(null); toast('매일 자동 백업을 껐어요'); bkRefresh(); return; }
-    const pw = await bkAskPw('자동 백업에 쓸 비밀번호 정하기');
+    if (HaruBackup.autoCfg().on) { HaruBackup.setAuto(null); toast('실시간 드라이브 백업을 껐어요'); bkRefresh(); return; }
+    const pw = await bkAskPw('실시간 백업 비밀번호 (다른 기기와 같은 비밀번호)');
     if (!pw) { bkRefresh(); return; }
+    const okPw = await bkBusy('비밀번호 확인 중…', () => HaruBackup.checkLivePw(pw));
+    if (!okPw) { bkRefresh(); return; }
     HaruBackup.setAuto({ on: true, pw, last: 0 });
+    toast('실시간 드라이브 백업을 켰어요');
     bkRefresh();
-    bkAutoRun(true);
+    bkLiveSoon(true);
   }
 }
-async function bkAutoRun(now) {
-  if (DEMO || typeof HaruBackup === 'undefined' || !Cloud.isActive() || !state.data || !HaruBackup.autoCfg().on) return;
-  try { if (await HaruBackup.autoTick(() => state.data, (APP_VERSION || '').split('-')[0])) { if (now) toast('구글 드라이브에 첫 자동 백업을 올렸어요'); bkLoad(); } } catch (e) { if (now) toast(e.message); }
+// 실시간 드라이브 백업: 바뀔 때마다 불러요 (켜져 있을 때만 몇 초 모았다가 올려요)
+function bkLiveSoon(now) {
+  if (DEMO || typeof HaruBackup === 'undefined' || !Cloud.isActive() || !state.data) return;
+  HaruBackup.liveSoon(() => state.data, (APP_VERSION || '').split('-')[0]);
+  if (now === true) HaruBackup.liveRun();
 }
-setTimeout(() => { bkAutoRun(); setInterval(bkAutoRun, 30 * 60 * 1000); }, 60 * 1000);
+if (typeof HaruBackup !== 'undefined') HaruBackup.onLive(() => { const f = HaruBackup.liveFiles(); if (f) bk.files = f; bkRefresh(); });
+setTimeout(() => { bkLiveSoon(); setInterval(bkLiveSoon, 30 * 60 * 1000); }, 15 * 1000);
+// 폰은 앱을 내리면 멈출 수 있어서, 내리기 직전에 모아 둔 걸 바로 올려요
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && typeof HaruBackup !== 'undefined' && HaruBackup.autoCfg().on && Cloud.isActive()) HaruBackup.liveRun(); });
 function backupCardHTML() {
   if (DEMO || typeof HaruBackup === 'undefined') return '';
   const dis = bk.busy ? 'disabled' : '';
@@ -1446,12 +1469,16 @@ function backupCardHTML() {
       <p class="m-muted small">드라이브의 <b>앱 전용 숨김 폴더</b>만 쓰는 권한이에요. 내 드라이브의 다른 파일은 보지 못하고, 백업도 드라이브 화면에 안 보여요.</p>`;
   } else {
     const auto = HaruBackup.autoCfg();
-    const files = bk.files || [];
+    const files = HaruBackup.backupFiles(bk.files);
+    const nPh = HaruBackup.photoCount(bk.files);
+    const ls = HaruBackup.liveState();
+    const liveNote = !auto.on ? '' : ls.busy ? ls.busy : ls.err ? '' : auto.liveAt ? `마지막으로 올린 때 ${when(auto.liveAt)}` : '곧 처음으로 올려요';
     drive = `<p class="m-muted">구글 드라이브 연결됨: <b>${esc(bk.drive.email || '')}</b></p>
-      <div class="m-row2"><button class="m-btn primary" data-a="bk-drive-up" ${dis}>지금 드라이브에 백업</button><button class="m-btn" data-a="bk-drive-off" ${dis}>연결 끊기</button></div>
-      <label class="m-set"><span>매일 자동 백업<small class="m-muted small" style="display:block">이 기기에서 하루 한 번 · 최근 14개만 남겨요${auto.on && auto.last ? ` · 마지막 ${when(auto.last)}` : ''}</small></span><input type="checkbox" data-a="bk-auto" ${auto.on ? 'checked' : ''} ${dis}></label>
-      ${files.length ? `<div class="m-bk-list">${files.map((f) => `<div class="m-bk-item"><span>${when(f.createdTime)} <small class="m-muted">${Math.max(1, Math.round(f.size / 1024))}KB</small></span>
-        <button class="m-btn sm" data-a="bk-drive-restore" data-id="${esc(f.id)}" ${dis}>되살리기</button><button class="m-btn sm" data-a="bk-drive-del" data-id="${esc(f.id)}" ${dis} aria-label="지우기">${icon('trash')}</button></div>`).join('')}</div>` : '<p class="m-muted">드라이브에 아직 백업이 없어요.</p>'}`;
+      <label class="m-set"><span>실시간 드라이브 백업<small class="m-muted small" style="display:block">할 일 · 포스트잇 · 사진이 바뀌면 몇 초 안에 드라이브로 자동으로 올라가요. 사진 파일도 같이 암호화해서 올려요. 하루 한 번 보관본도 남겨요 (최근 14개).${liveNote ? `<br><b>${esc(liveNote)}</b>` : ''}${auto.on && ls.err ? `<br><span class="m-err">${esc(ls.err)}</span>` : ''}</small></span><input type="checkbox" data-a="bk-auto" ${auto.on ? 'checked' : ''} ${dis}></label>
+      <div class="m-row2"><button class="m-btn" data-a="bk-drive-up" ${dis}>따로 백업 하나 더</button><button class="m-btn" data-a="bk-drive-off" ${dis}>연결 끊기</button></div>
+      ${nPh ? `<p class="m-muted small">드라이브에 사진 파일 ${nPh}장 보관 중</p>` : ''}
+      ${files.length ? `<div class="m-bk-list">${files.map((f) => `<div class="m-bk-item"><span>${f.live ? '<b>실시간 최신본</b> ' : ''}${when(f.when)} <small class="m-muted">${Math.max(1, Math.round(f.size / 1024))}KB</small></span>
+        <button class="m-btn sm" data-a="bk-drive-restore" data-id="${esc(f.id)}" ${dis}>되살리기</button>${f.live ? '' : `<button class="m-btn sm" data-a="bk-drive-del" data-id="${esc(f.id)}" ${dis} aria-label="지우기">${icon('trash')}</button>`}</div>`).join('')}</div>` : '<p class="m-muted">드라이브에 아직 백업이 없어요.</p>'}`;
   }
   return `<div class="m-card m-pad m-bk" id="mBackup"><b class="m-clog-h">백업</b>
     <p class="m-muted">할 일 · 목록 · 디데이 · 포스트잇 · 사진 목록 · 타이머 기록을 <b>내가 정한 비밀번호로 암호화</b>해서 보관해요. 비밀번호 없이는 아무도(구글 · 개발자 포함) 열 수 없어요. <b>비밀번호를 잊으면 되살릴 수 없어요.</b></p>
