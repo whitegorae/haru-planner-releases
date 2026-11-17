@@ -1561,12 +1561,9 @@ function backupCardHTML() {
   } else {
     const auto = HaruBackup.autoCfg();
     const files = HaruBackup.backupFiles(bk.files);
-    const ps = HaruBackup.photoStats(state.data);
     const ls = HaruBackup.liveState();
     const liveNote = !auto.on ? '' : ls.busy ? ls.busy : ls.err ? '' : auto.liveAt ? `마지막으로 올린 때 ${when(auto.liveAt)}` : '곧 처음으로 올려요';
-    drive = `<p class="m-muted">구글 드라이브 연결됨: <b>${esc(bk.drive.email || '')}</b></p>
-      <p class="m-muted small"><b>원본 사진</b> · 드라이브에 ${ps.onDrive}장${ps.waiting ? ` · <b>${HaruBackup.keyReady() ? '옮기는 중' : '옮길 차례'} ${ps.waiting}장</b>` : ''}<br>원본은 드라이브의 "HaruPlanner 원본 사진" 폴더에, 달력용 작은 사진만 Supabase 에 둬요.</p>
-      <label class="m-set"><span>실시간 드라이브 백업<small class="m-muted small" style="display:block">할 일 · 포스트잇 · 사진이 바뀌면 몇 초 안에 드라이브로 자동으로 올라가요. 하루 한 번 보관본도 남겨요 (최근 14개).${liveNote ? `<br><b>${esc(liveNote)}</b>` : ''}${auto.on && ls.err ? `<br><span class="m-err">${esc(ls.err)}</span>` : ''}</small></span><input type="checkbox" data-a="bk-auto" ${auto.on ? 'checked' : ''} ${dis}></label>
+    drive = `<label class="m-set"><span>실시간 드라이브 백업<small class="m-muted small" style="display:block">할 일 · 포스트잇 · 사진이 바뀌면 몇 초 안에 드라이브로 자동으로 올라가요. 하루 한 번 보관본도 남겨요 (최근 14개).${liveNote ? `<br><b>${esc(liveNote)}</b>` : ''}${auto.on && ls.err ? `<br><span class="m-err">${esc(ls.err)}</span>` : ''}</small></span><input type="checkbox" data-a="bk-auto" ${auto.on ? 'checked' : ''} ${dis}></label>
       <div class="m-row2"><button class="m-btn" data-a="bk-drive-up" ${dis}>따로 백업 하나 더</button><button class="m-btn" data-a="bk-drive-off" ${dis}>연결 끊기</button></div>
       ${files.length ? `<div class="m-bk-list">${files.map((f) => `<div class="m-bk-item"><span>${f.live ? '<b>실시간 최신본</b> ' : ''}${when(f.when)} <small class="m-muted">${Math.max(1, Math.round(f.size / 1024))}KB</small></span>
         <button class="m-btn sm" data-a="bk-drive-restore" data-id="${esc(f.id)}" ${dis}>되살리기</button>${f.live ? '' : `<button class="m-btn sm" data-a="bk-drive-del" data-id="${esc(f.id)}" ${dis} aria-label="지우기">${icon('trash')}</button>`}</div>`).join('')}</div>` : '<p class="m-muted">드라이브에 아직 백업이 없어요.</p>'}`;
