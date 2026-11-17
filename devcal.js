@@ -8,6 +8,7 @@
  *  - 연결 정보(폰 일정 id ↔ 할 일 id)는 이 폰에만 저장해요
  *  - 구글 계정 캘린더는 고르지 않아요 → 구글은 서버 연동(CalSync)이 맡아요 (두 번 생기지 않게)
  *  - 반복 일정은 건너뛰어요. 끝낸 할 일은 폰 캘린더에 "✓ 제목" 으로 보여요.
+ *  - 삼성 캘린더의 "할 일"(일정과 따로 저장돼요)도 가져와요 (APK 1.5.0~). 하루플래너에서 체크하면 삼성 할 일에도 완료로 표시해요.
  * 이 파일은 mobile.js 의 state · taskById · makeTask · commit · taskEnd 를 실행 중에 써요.
  * ========================================================================= */
 
@@ -119,6 +120,77 @@ const DevCal = (() => {
     if (!cfg.target || !cals.some((c) => c.id === cfg.target && usable(c))) cfg.target = pickTarget(cals);
   }
 
+  // ---------- 삼성 캘린더 "할 일" ----------
+  // 삼성 캘린더의 할 일은 안드로이드 표준 "일정"이 아니라 삼성 전용 저장소에 있어요 (APK 1.5.0~ 에서 읽어요)
+  const taskFp = (f) => JSON.stringify([f.title, f.notes, f.dueDate || null, !!f.done]);
+  const taskHash = (t) => JSON.stringify([t.title || '', t.notes || '', t.dueDate || null, !!t.done]);
+  function taskFieldsOf(k) {
+    const f = { title: String(k.title || '').trim() || '제목 없음', notes: String(k.notes || ''), done: !!k.done };
+    const due = Number(k.due) || 0;
+    f.dueDate = due > 0 ? (k.dueUtc ? ymdUTC(due) : ymdLocal(due)) : null;
+    return f;
+  }
+  async function pullSamsungTasks() {
+    const res = { changed: false, pulled: 0 };
+    if (cfg.tasks === false) return res;
+    let r;
+    try { r = await call('tasks'); } catch (e) {
+      // 예전 APK(할 일 읽기 없음) 또는 읽기 오류
+      st.tasks = { supported: false, why: /not implemented|unimplemented|is not a function|no bridge/i.test(String(e && e.message)) ? 'old-app' : String((e && e.message) || e) };
+      return res;
+    }
+    if (!r || !r.supported) { st.tasks = { supported: false, why: (r && r.why) || '' }; return res; }
+    const list = Array.isArray(r.tasks) ? r.tasks : [];
+    const tmap = (cfg.tmap = cfg.tmap || {});
+    const seen = new Set();
+    const listId = state.data.lists.some((l) => l.id === cfg.listId) ? cfg.listId : 'inbox';
+    for (const k of list) {
+      if (!k || !k.id) continue;
+      seen.add(k.id);
+      const f = taskFieldsOf(k);
+      const fp = taskFp(f);
+      let m = tmap[k.id];
+      if (m && m.skip) { if (f.done) continue; delete tmap[k.id]; m = undefined; } // 끝냈던 옛 할 일을 다시 "안 끝남"으로 바꿨어요 → 이제 가져와요
+      let t = m ? taskById(m.tid) : null;
+      if (m && !t) continue; // 하루플래너에서 지운 할 일 → 삼성 쪽은 그대로 두고 다시 가져오지 않아요
+      if (m && m.fp === fp) {
+        // 삼성 쪽은 그대로인데 하루플래너에서 체크 · 해제했으면 → 삼성 할 일에도 표시해요
+        if (t && !!t.done !== f.done) {
+          try { await call('taskDone', { id: k.id, done: !!t.done }); m.fp = taskFp({ ...f, done: !!t.done }); } catch (_) { /* 다음에 */ }
+        }
+        m.h = taskHash(t);
+        continue;
+      }
+      if (m && t && taskHash(t) !== m.h) { m.fp = fp; continue; } // 양쪽에서 다 고쳤으면 하루플래너 쪽을 남겨요
+      if (!t) {
+        if (f.done) { tmap[k.id] = { tid: '', fp, h: '', skip: true }; continue; } // 이미 끝낸 옛 할 일은 가져오지 않아요
+        t = makeTask({ ...f, listId, doneAt: null });
+        state.data.tasks.push(t);
+      } else {
+        if (f.done !== !!t.done) t.doneAt = f.done ? Date.now() : null;
+        if (t.dueDate !== f.dueDate) t.reminded = null;
+        Object.assign(t, f);
+      }
+      tmap[k.id] = { tid: t.id, fp, h: taskHash(t) };
+      res.changed = true;
+      res.pulled++;
+    }
+    // 삼성에서 지운 할 일 → 하루플래너에서도 (하루플래너에서 고치지 않은 것만, 한꺼번에 많이 사라지면 지우지 않아요)
+    const gone = Object.keys(tmap).filter((id) => !seen.has(id));
+    const real = gone.filter((id) => tmap[id].tid);
+    if (real.length > 20 && real.length > Object.keys(tmap).length * 0.5) st.warn = `삼성 할 일 ${real.length}개가 한꺼번에 사라져서, 안전을 위해 하루플래너에서는 지우지 않았어요.`;
+    else {
+      for (const id of gone) {
+        const m = tmap[id];
+        const t = m.tid ? taskById(m.tid) : null;
+        if (t && taskHash(t) === m.h) { state.data.tasks = state.data.tasks.filter((x) => x !== t); res.changed = true; }
+        delete tmap[id];
+      }
+    }
+    st.tasks = { supported: true, count: list.filter((k) => !k.done).length, linked: Object.values(tmap).filter((x) => x.tid).length };
+    return res;
+  }
+
   async function sync() {
     if (!available || !cfg.on || !st.granted || !state.data) return;
     if (typeof canEdit === 'function' && state.offline) return;
@@ -164,7 +236,7 @@ const DevCal = (() => {
         const f = fieldsOf(ev, m);
         if (!m) { // 처음 보는 폰 일정: 제목 · 날짜 · 시각이 같은 할 일이 아직 연결 안 돼 있으면 새로 만들지 않고 이어 붙여요
           const key = `${f.title.trim().toLowerCase()}|${f.dueDate}|${f.dueTime || ''}`;
-          const linkedTids = new Set(Object.values(map).map((x) => x.tid));
+          const linkedTids = new Set([...Object.values(map), ...Object.values(cfg.tmap || {})].map((x) => x.tid));
           const same = state.data.tasks.find((x) => !linkedTids.has(x.id) && x.dueDate && `${String(x.title || '').trim().toLowerCase()}|${x.dueDate}|${x.dueTime || ''}` === key);
           if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false, calId: ev.calId, src: 'link' }; continue; }
         }
@@ -210,10 +282,17 @@ const DevCal = (() => {
         }
       }
 
+      // 1-2) 삼성 캘린더 "할 일" → 하루플래너 (일정과 따로 저장돼 있어요)
+      const tr = await pullSamsungTasks();
+      if (tr.changed) changed = true;
+      pulledNow += tr.pulled;
+      const fromTasks = new Set(Object.values(cfg.tmap || {}).map((x) => x.tid));
+
       // 2) 하루플래너 → 폰 캘린더
       if (cfg.push !== false && cfg.target) {
         const evOf = new Map(Object.entries(map).map(([eid, m]) => [m.tid, eid]));
         for (const t of state.data.tasks) {
+          if (fromTasks.has(t.id) && !evOf.has(t.id)) continue; // 삼성 "할 일"에서 온 건 일정으로 또 넣지 않아요
           const eid = evOf.get(t.id);
           const m = eid ? map[eid] : null;
           if (!t.dueDate) { if (m) { await call('remove', { id: eid }).catch(() => {}); delete map[eid]; } continue; }
@@ -247,7 +326,11 @@ const DevCal = (() => {
     } finally {
       running = false;
       st.busy = false;
-      if (changed) commit();
+      if (changed) {
+        commit();
+        // 앱이 뒤에 있을 때도 바로 서버로 올려서 PC · 다른 기기에 곧바로 보여요
+        if (document.hidden && typeof Cloud !== 'undefined' && Cloud.isActive && Cloud.isActive() && Cloud.flushNow) Cloud.flushNow().catch(() => {});
+      }
       emit();
       if (again) { again = false; schedule(1500); }
     }
@@ -268,8 +351,10 @@ const DevCal = (() => {
     started = true;
     try {
       const p = C.Plugins && C.Plugins.HaruCalendar;
-      if (p && p.addListener) p.addListener('changed', () => schedule(500));
-      else if (C.addListener) C.addListener('HaruCalendar', 'changed', () => schedule(500));
+      // 앱이 뒤에 있으면 타이머가 늦게 돌아서, 알림이 오면 바로 맞춰요 (폰 쪽에서 이미 1.5초 모아서 보내요)
+      const onChanged = () => { clearTimeout(schedT); sync(); };
+      if (p && p.addListener) p.addListener('changed', onChanged);
+      else if (C.addListener) C.addListener('HaruCalendar', 'changed', onChanged);
     } catch (_) { /* 켜져 있을 때만 30초마다 맞춰요 */ }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(300); });
     await checkPerm();
@@ -314,6 +399,6 @@ const DevCal = (() => {
     serverGoogle,
     onStatus: (f) => { listeners.add(f); return () => listeners.delete(f); },
     start, enable, disable, sync, schedule, loadCalendars, setCals, setTarget, setPush, setList, setPast,
-    _fieldsOf: fieldsOf, _eventOf: eventOf, // 시험용
+    _fieldsOf: fieldsOf, _eventOf: eventOf, _taskFieldsOf: taskFieldsOf, // 시험용
   };
 })();
