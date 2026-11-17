@@ -434,6 +434,10 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .dev-h b { font-weight: normal; font-size: 20px; color: var(--accent); }
 .dev-h span, .dev-sub, .dev-note, .dev-row small { font-family: var(--font-sub); color: var(--text-3); font-size: 14px; }
 .dev-sub { margin: 4px 0 12px; }
+.dev-toggle { display: flex; width: 100%; align-items: baseline; gap: 10px; padding: 0; margin: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dev-chev { margin-left: auto; font-style: normal; font-size: 22px; line-height: 1; color: var(--text-3); transition: transform .15s; align-self: center; }
+.dev-chev.on { transform: rotate(90deg); }
+.dev.closed { padding-top: 16px; padding-bottom: 16px; }
 .dev-sub2 { margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--border); }
 .dev-user { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--text) 5%, transparent); }
 .dev-user-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin-bottom: 6px; }

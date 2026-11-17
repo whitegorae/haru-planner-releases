@@ -13,6 +13,15 @@ const DevMode = (() => {
   let busy = false;
   const listeners = new Set();
   const emit = () => listeners.forEach((f) => { try { f(); } catch (_) { /* 무시 */ } });
+  // 펼치기 · 접기 (이 기기에 기억해요). 접혀 있으면 드라이브 · 사용자별 사용량은 읽지 않아요
+  const OPEN_KEY = 'haru-devmode-open';
+  let open = (() => { try { return localStorage.getItem(OPEN_KEY) === '1'; } catch (_) { return false; } })();
+  function toggle() {
+    open = !open;
+    try { localStorage.setItem(OPEN_KEY, open ? '1' : '0'); } catch (_) { /* 무시 */ }
+    emit();
+    if (open && data && !data.people) load(true);
+  }
   const me = () => (typeof Cloud !== 'undefined' && Cloud.isActive() && Cloud.user() ? Cloud.user().id : null);
 
   async function load(force = false) {
@@ -26,11 +35,11 @@ const DevMode = (() => {
       d = !r.error && r.data && typeof r.data === 'object' ? r.data : null;
     } catch (_) { d = null; }
     // 관리자일 때만: 구글 드라이브(원본 사진 · 백업 보관소) 사용량도 읽어요 (관리자 본인 드라이브)
-    if (d && typeof HaruBackup !== 'undefined' && HaruBackup.driveUsage) {
+    if (d && open && typeof HaruBackup !== 'undefined' && HaruBackup.driveUsage) {
       try { d = { ...d, drive: await HaruBackup.driveUsage() }; } catch (e) { d = { ...d, drive: { error: (e && e.message) || String(e) } }; }
     }
     // 사용자별 사용량: Supabase(계정 · 사진 저장소 · 할 일) + 드라이브(각자 연결한 드라이브)
-    if (d) {
+    if (d && open) {
       const [sb, dr] = await Promise.all([
         Cloud.client().rpc('admin_users').then((r) => (!r.error && Array.isArray(r.data) ? r.data : null), () => null),
         typeof HaruBackup !== 'undefined' && HaruBackup.driveAdminUsage ? HaruBackup.driveAdminUsage().then((r) => (r && Array.isArray(r.users) ? r.users : null), () => null) : Promise.resolve(null),
@@ -145,8 +154,10 @@ const DevMode = (() => {
     };
     const t = new Date(d.at || Date.now());
     const all = (typeof CHANGELOG !== 'undefined' ? CHANGELOG : []);
+    const head = `<button class="dev-h dev-toggle" data-dev="toggle" aria-expanded="${open}"><b>개발자 모드</b><span>이 계정에서만 보여요</span><i class="dev-chev ${open ? 'on' : ''}">›</i></button>`;
+    if (!open) return `<div class="dev ${cls} closed" id="devPanel">${head}</div>`;
     return `<div class="dev ${cls}" id="devPanel">
-      <div class="dev-h"><b>개발자 모드</b><span>이 계정에서만 보여요</span></div>
+      ${head}
       <p class="dev-sub">Supabase 무료 플랜 사용량 · ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')} 기준</p>
       ${bar('데이터베이스', Number(d.db_bytes) || 0, LIMITS.db, size)}
       ${bar('파일 저장소 (사진)', Number(d.storage_bytes) || 0, LIMITS.storage, size)}
@@ -170,7 +181,11 @@ const DevMode = (() => {
     </div>`;
   }
 
-  document.addEventListener('click', (ev) => { if (ev.target.closest && ev.target.closest('[data-dev="refresh"]')) load(true); });
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest) return;
+    if (ev.target.closest('[data-dev="refresh"]')) load(true);
+    else if (ev.target.closest('[data-dev="toggle"]')) toggle();
+  });
 
   return { load, get, html, onChange: (f) => { listeners.add(f); return () => listeners.delete(f); } };
 })();
