@@ -411,6 +411,7 @@ function viewToday() {
   const nd = state.data.ddays.map((x) => ({ x, ...ddayInfo(x.date, x.style) })).filter((o) => o.diff >= 0).sort((a, b) => a.diff - b.diff)[0];
   const hol = holidayOf(t);
   return `${head('오늘', `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS[d.getDay()]}요일${hol ? ` · ${esc(hol)}` : ''}`)}
+    ${apkBanner()}
     ${nd ? `<button class="m-dday-strip" data-a="tab" data-k="dday" style="--c:${esc(ddColor(nd.x))}"><b>${nd.label}</b><span>${esc(nd.x.title)}</span>${icon('chevR')}</button>` : ''}
     ${photoStrip(t, '오늘의 사진')}
     ${section('over', '지난 일정', over)}
@@ -1199,6 +1200,13 @@ document.addEventListener('visibilitychange', () => {
   if (state.data) render(); // 날짜가 바뀌었을 수도 있어요
 });
 window.addEventListener('online', () => { if (state.offline) startCloud(); });
+// 아이폰: 키보드를 닫은 뒤 화면이 위로 밀린 채 남으면 아래 탭 밑에 빈 띠가 생겨요 → 제자리로
+if (/iP(hone|od|ad)/.test(navigator.userAgent)) {
+  document.addEventListener('focusout', () => setTimeout(() => {
+    const a = document.activeElement;
+    if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) window.scrollTo(0, 0);
+  }, 80));
+}
 window.addEventListener('pagehide', () => { if (Cloud.isActive()) Cloud.flushNow(1500); });
 
 function demoData() {
@@ -1254,7 +1262,13 @@ async function checkApk() {
   if (apkInfo.versionCode > mine) {
     apkNotified = true;
     toast(`안드로이드 앱 새 버전 ${apkInfo.version} 이 나왔어요`, { action: '업데이트', timeout: 30000, onAction: installApk });
+    if (state.data) render(); // 오늘 화면 맨 위에 "새 앱 설치" 띠
   }
+}
+// 새 앱이 있으면 오늘 화면 맨 위에 계속 보여줘요 (알림은 놓치기 쉬워요)
+function apkBanner() {
+  if (!ANDROID_APP || !apkInfo || !apkNewer()) return '';
+  return `<button class="m-apk" data-a="apk-update"><span><b>새 안드로이드 앱 ${esc(apkInfo.version)}</b><small>지금 ${esc(ANDROID_APP.slice(1).join('.'))} · 설치하면 아래 버튼 줄 색, 삼성 캘린더 실시간 연동이 좋아져요</small></span><i>설치</i></button>`;
 }
 const apkNewer = () => !!(apkInfo && ANDROID_APP && apkInfo.versionCode > Number(ANDROID_APP[1]) * 10000 + Number(ANDROID_APP[2]) * 100 + Number(ANDROID_APP[3]));
 // 새 APK: 1.2.0 부터는 앱 안에서 받아서 안드로이드 설치 화면을 바로 띄워요 (예전 앱은 브라우저로 받아요)
