@@ -903,6 +903,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'go-login': location.href = location.pathname; break;
     case 'apk-update': installApk(); break;
+    case 'apk-hint-close': try { localStorage.setItem('haru-apk-hint-closed', '1'); } catch (_) { /* 무시 */ } render(); break;
     case 'hard-reload': hardReload(); break;
     // 캘린더 연동
     case 'cs-connect': CalSync.connect((u) => { if (ANDROID_APP) location.href = u; else window.open(u, '_blank'); }, 'inbox').catch((err) => toast(err.message)); break;
@@ -1268,6 +1269,13 @@ async function checkApk() {
 }
 // 새 앱이 있으면 오늘 화면 맨 위에 계속 보여줘요 (알림은 놓치기 쉬워요)
 function apkBanner() {
+  // 안드로이드 폰에서 크롬 · 홈 화면 웹 앱으로 연 경우: 삼성 캘린더 · 홈 화면 위젯은 안드로이드 앱에서만 돼요
+  if (!ANDROID_APP && isAndroid && !DEMO) {
+    let closed = false;
+    try { closed = localStorage.getItem('haru-apk-hint-closed') === '1'; } catch (_) { /* 무시 */ }
+    if (closed) return '';
+    return `<div class="m-apk"><span><b>하루플래너 안드로이드 앱</b><small>지금은 웹(브라우저)으로 열려 있어요. 삼성 캘린더 연동 · 홈 화면 위젯은 앱에서만 돼요</small></span><a class="m-apk-get" href="HaruPlanner.apk" download>앱 받기</a><button class="m-apk-x" data-a="apk-hint-close" aria-label="닫기">${icon('x')}</button></div>`;
+  }
   if (!ANDROID_APP || !apkInfo || !apkNewer()) return '';
   return `<button class="m-apk" data-a="apk-update"><span><b>새 안드로이드 앱 ${esc(apkInfo.version)}</b><small>지금 ${esc(ANDROID_APP.slice(1).join('.'))} · 설치하면 아래 버튼 줄 색, 삼성 캘린더 실시간 연동이 좋아져요</small></span><i>설치</i></button>`;
 }

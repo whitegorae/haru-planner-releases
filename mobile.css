@@ -70,6 +70,9 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .m-apk { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 12px; padding: 12px 14px; border-radius: 18px; background: var(--accent-soft); color: var(--text); text-align: left; }
 .m-apk span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .m-apk small { font-family: var(--font-sub); font-size: 13px; color: var(--text-2); line-height: 1.35; }
+.m-apk-get { padding: 8px 14px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 14px; flex-shrink: 0; text-decoration: none; }
+.m-apk-x { width: 30px; height: 30px; display: grid; place-items: center; color: var(--text-3); flex-shrink: 0; margin-right: -4px; }
+.m-apk-x .ic { width: 16px; height: 16px; }
 .m-apk i { font-style: normal; padding: 8px 14px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 14px; flex-shrink: 0; }
 
 /* 아래 탭 */
