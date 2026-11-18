@@ -314,6 +314,18 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .m-dp-row + .m-dp-row { border-top: 1px dashed var(--border); }
 .m-dp-row > .ic:first-child { width: 20px; height: 20px; color: var(--text-2); }
 .m-dp-row.sub { padding-left: 30px; color: var(--text-2); font-size: 15px; }
+/* 매주 · 요일과 기간 골라 미리 추가 */
+.m-wr { margin: 2px 0 6px; padding: 10px; border-radius: 14px; background: var(--hover); }
+.m-wr .m-dp-row.sub { padding-left: 4px; gap: 6px; }
+.m-wr input[type="date"] { font-size: 15px; }
+.m-wr-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.m-wr-days button { height: 40px; border-radius: 12px; font-size: 15px; color: var(--text); background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--border); }
+.m-wr-days button.sun { color: #e5484d; }
+.m-wr-days button.sat { color: #3e7bfa; }
+.m-wr-days button.on { background: var(--accent); color: #fff; box-shadow: none; }
+.m-wr-quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.m-wr-quick button { height: 32px; padding: 0 12px; border-radius: 16px; font-size: 14px; color: var(--text-2); background: var(--panel); }
+.m-wr-quick button.on { background: var(--accent-soft, var(--panel)); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .m-dp-row input, .m-dp-row select { border: 0; background: var(--hover); border-radius: 10px; padding: 7px 10px; font-size: 16px; color: var(--accent); min-width: 0; max-width: 58%; }
 .m-dp-row input:disabled, .m-dp-row select:disabled { opacity: .45; }
 .m-x { width: 30px; height: 30px; display: grid; place-items: center; color: var(--text-3); }
@@ -429,7 +441,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 .m-checks label { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .m-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .m-muted.small { font-size: 12.5px; }
-.m-chip.danger { color: #e5556b; background: color-mix(in srgb, #e5556b 12%, var(--panel)); border: 0; height: 34px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13.5px; display: inline-flex; align-items: center; gap: 4px; }
+.m-chip.danger { color: #e5556b; background: color-mix(in srgb, #e5556b 12%, var(--panel)); border: 0; height: 34px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13.5px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0; }
 /* 개발자 모드 */
 .dev { padding: 20px 22px; border-radius: 26px; background: var(--panel); box-shadow: var(--shadow-soft); border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
 .dev.m { padding: 16px; border-radius: 20px; margin: 0 0 14px; }

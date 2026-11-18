@@ -87,10 +87,29 @@ function yearlySeriesCopies(base, newId) {
   const out = [];
   for (let k = 1; k <= SERIES_YEARS; k++) {
     const due = addYearsClamp(base.dueDate, k);
-    out.push({ ...JSON.parse(JSON.stringify(base)), id: newId(), dueDate: due, endDate: span ? addDays(due, span) : null, done: false, doneAt: null, reminded: null, gcal: null, createdAt: Date.now(), repeat: 'none', seriesId: base.seriesId });
+    out.push({ ...JSON.parse(JSON.stringify(base)), id: newId(), dueDate: due, endDate: span ? addDays(due, span) : null, done: false, doneAt: null, reminded: null, gcal: null, createdAt: Date.now(), repeat: 'none', seriesId: base.seriesId, seriesKind: base.seriesKind });
   }
   return out;
 }
+// 매주 · 요일 골라 기간만큼: start ~ until 사이에서 고른 요일(0=일 … 6=토)인 날들 (최대 SERIES_MAX 개)
+const SERIES_MAX = 400;
+function weeklySeriesDates(start, until, days) {
+  const set = new Set((days || []).map(Number));
+  const out = [];
+  if (!start || !until || until < start || !set.size) return out;
+  for (let d = start; d <= until && out.length < SERIES_MAX; d = addDays(d, 1)) if (set.has(parseYmd(d).getDay())) out.push(d);
+  return out;
+}
+// base 를 dates 의 날마다 하나씩 복사해요 (기간 일정이면 같은 길이로)
+function seriesCopiesOn(base, dates, newId) {
+  const span = base.endDate && base.endDate > base.dueDate ? diffDays(base.endDate, base.dueDate) : 0;
+  return dates.map((due) => ({ ...JSON.parse(JSON.stringify(base)), id: newId(), dueDate: due, endDate: span ? addDays(due, span) : null, done: false, doneAt: null, reminded: null, gcal: null, createdAt: Date.now(), repeat: 'none', seriesId: base.seriesId, seriesKind: base.seriesKind, timeSpent: 0, subtasks: (base.subtasks || []).map((s) => ({ ...s, done: false })) }));
+}
+const WEEK_KO = ['일', '월', '화', '수', '목', '금', '토'];
+// "매주 월 · 수 · 금" 같은 글
+const weekDaysText = (days) => { const s = new Set((days || []).map(Number)); return [1, 2, 3, 4, 5, 6, 0].filter((d) => s.has(d)).map((d) => WEEK_KO[d]).join(' · '); };
+// 묶음 이름 (지우기 단추에 써요)
+const seriesName = (t) => ({ weekly: '매주 반복', phone: '폰 캘린더 반복', google: '구글 캘린더 반복' }[t && t.seriesKind] || '매년 반복');
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 디데이: 앞으로 남은 날은 D-n, 지난 날은 한국식 기념일 계산 (시작한 날 = 1일, 카카오톡과 같아요)
 //   예) 2026-01-01 시작 → 1월 1일 "1일", 1월 2일 "2일", 100일째 = 4월 10일

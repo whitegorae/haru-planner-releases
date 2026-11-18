@@ -7,7 +7,7 @@
  *  - 하루플래너에서 바꾼 건 몇 초 안에 폰 캘린더로 (다른 기기에서 바꾼 것도 실시간으로 받아서 보내요)
  *  - 연결 정보(폰 일정 id ↔ 할 일 id)는 이 폰에만 저장해요
  *  - 구글 계정 캘린더는 고르지 않아요 → 구글은 서버 연동(CalSync)이 맡아요 (두 번 생기지 않게)
- *  - 반복 일정은 건너뛰어요. 끝낸 할 일은 폰 캘린더에 "✓ 제목" 으로 보여요.
+ *  - 반복 일정은 회차마다 할 일로 가져와요 (APK 1.7.0~, 그 전에는 건너뛰어요). 끝낸 할 일은 폰 캘린더에 "✓ 제목" 으로 보여요.
  *  - 삼성 캘린더의 "할 일"(일정과 따로 저장돼요)도 가져와요 (APK 1.5.0~). 하루플래너에서 체크하면 삼성 할 일에도 완료로 표시해요.
  * 이 파일은 mobile.js 의 state · taskById · makeTask · commit · taskEnd 를 실행 중에 써요.
  * ========================================================================= */
@@ -226,6 +226,102 @@ const DevCal = (() => {
     return res;
   }
 
+  // ---------- 폰 캘린더의 반복 일정 (삼성 캘린더에서 "매주" · "매년" 으로 만든 일정) → 회차마다 할 일 (APK 1.7.0~) ----------
+  //  - 지난 30일 ~ 앞으로 1년 (매년 반복은 10년) 회차만 가져와요
+  //  - 같은 반복 일정에서 온 할 일은 seriesId 로 묶여서 하루플래너에서 한 번에 지울 수 있어요
+  //  - 하루플래너에서 고친 회차는 하루플래너 쪽을 남겨요 (폰의 반복 일정은 그대로)
+  //  - 하루플래너에서 묶음을 모두 지우면 폰의 반복 일정도 지워요. 일부만 지우면 그 회차만 다시 가져오지 않아요
+  const REP_PAST = 30;
+  const REP_FUTURE = 365;
+  const REP_FUTURE_YEARLY = 3650;
+  async function pullRepeats(ids, hasRepeat) {
+    const res = { changed: false, pulled: 0 };
+    const rmap = (cfg.rmap = cfg.rmap || {});
+    if (!hasRepeat && !Object.keys(rmap).length) { st.repeat = { supported: true, count: 0, linked: 0 }; return res; }
+    const today = todayStr();
+    const from = localMs(addDays(today, -REP_PAST), null);
+    const to = localMs(addDays(today, REP_FUTURE_YEARLY), null);
+    const toNormal = localMs(addDays(today, REP_FUTURE + 1), null);
+    const yearly = (k) => /FREQ=YEARLY/i.test(String(k.rrule || ''));
+    let list;
+    try { list = (await call('instances', { calIds: ids, from, to })).instances || []; } catch (e) {
+      st.repeat = { supported: false, why: /not implemented|unimplemented|is not a function|no bridge/i.test(String(e && e.message)) ? 'old-app' : String((e && e.message) || e) };
+      return res;
+    }
+    list = list.filter((k) => k && k.id && (yearly(k) || Number(k.start) < toNormal));
+    const inWindow = (m) => m.s >= from && m.s < (m.y ? to : toNormal);
+    const listId = state.data.lists.some((l) => l.id === cfg.listId) ? cfg.listId : 'inbox';
+    const linkedTids = new Set([...Object.values(cfg.map || {}), ...Object.values(cfg.tmap || {}), ...Object.values(rmap)].map((x) => x.tid).filter(Boolean));
+    const removedEv = new Set(cfg.rgone || []);
+    const seen = new Set();
+    for (const k of list) {
+      if (removedEv.has(k.ev)) continue; // 방금 하루플래너에서 묶음째 지워서 폰에서도 지운 일정
+      seen.add(k.id);
+      const m = rmap[k.id];
+      if (m && m.skip) continue; // 하루플래너에서 지운 회차 → 다시 가져오지 않아요
+      let t = m ? taskById(m.tid) : null;
+      if (m && !t) continue; // 하루플래너에서 지웠어요 → 아래에서 정리해요
+      const fp = fpOf(k);
+      if (m && m.fp === fp) continue;
+      if (m && t && hashOf(t) !== m.h) { m.fp = fp; continue; } // 하루플래너에서 고친 회차는 그대로
+      const f = fieldsOf(k, null);
+      if (!t) {
+        const key = `${f.title.trim().toLowerCase()}|${f.dueDate}|${f.dueTime || ''}`;
+        const same = state.data.tasks.find((x) => !linkedTids.has(x.id) && x.dueDate && `${String(x.title || '').trim().toLowerCase()}|${x.dueDate}|${x.dueTime || ''}` === key);
+        if (same) t = same;
+        else {
+          t = makeTask({ ...f, listId, doneAt: f.done ? Date.now() : null });
+          state.data.tasks.push(t);
+        }
+        if (!t.seriesId) { t.seriesId = `r-${k.ev}`; t.seriesKind = 'phone'; }
+        linkedTids.add(t.id);
+      } else {
+        if (f.done !== !!t.done) t.doneAt = f.done ? Date.now() : null;
+        if (t.dueDate !== f.dueDate || t.dueTime !== f.dueTime) t.reminded = null;
+        Object.assign(t, f);
+      }
+      rmap[k.id] = { tid: t.id, ev: k.ev, s: Number(k.start), y: yearly(k) ? 1 : 0, fp, h: hashOf(t), at: nowAt() };
+      res.changed = true;
+      res.pulled++;
+    }
+    // 하루플래너에서 지운 회차 (오래된 데이터로 판단하지 않게 3) 과 같은 조건)
+    const groups = new Map();
+    for (const [key, m] of Object.entries(rmap)) {
+      if (m.skip || !seen.has(key)) continue;
+      if (!groups.has(m.ev)) groups.set(m.ev, []);
+      groups.get(m.ev).push([key, m]);
+    }
+    for (const [ev, arr] of groups) {
+      const del = arr.filter(([, m]) => !taskById(m.tid) && (seenTids.has(m.tid) || (m.at ? (state.dataAt || 0) > m.at + 3000 : true)));
+      if (!del.length) continue;
+      if (del.length === arr.length && arr.length >= 2) { // 묶음을 모두 지웠어요 → 폰의 반복 일정도
+        await call('remove', { id: ev }).catch(() => {});
+        for (const [key, m] of Object.entries(rmap)) if (m.ev === ev) delete rmap[key];
+        cfg.rgone = [...(cfg.rgone || []), ev].slice(-100);
+      } else for (const [key, m] of del) rmap[key] = { skip: 1, ev: m.ev, s: m.s, y: m.y };
+    }
+    // 폰에서 지운 회차 · 반복 일정 → 하루플래너에서도 (하루플래너에서 고치지 않은 것만). 기간 밖으로 지나간 회차는 연결만 풀어요
+    const gone = Object.keys(rmap).filter((key) => !seen.has(key));
+    let glitch = false;
+    if (!list.length && gone.length > 20) { // 읽기가 잠깐 비어 보이는 경우: 반복 일정이 정말 없어졌는지 확인해요
+      const evs = [...new Set(gone.map((key) => rmap[key].ev))].slice(0, 50);
+      try { const { events: alive = [] } = await call('existing', { ids: evs }); glitch = alive.some((e) => e.rrule && ids.includes(e.calId)); } catch (_) { glitch = true; }
+    }
+    if (!glitch) {
+      for (const key of gone) {
+        const m = rmap[key];
+        if (m.tid && inWindow(m)) {
+          const t = taskById(m.tid);
+          if (t && hashOf(t) === m.h) { state.data.tasks = state.data.tasks.filter((x) => x !== t); res.changed = true; }
+        }
+        delete rmap[key];
+      }
+      if (cfg.rgone && cfg.rgone.length) cfg.rgone = cfg.rgone.filter((ev) => list.some((k) => k.ev === ev)); // 폰에서 다 사라졌으면 잊어요
+    }
+    st.repeat = { supported: true, count: new Set(list.map((k) => k.ev)).size, linked: Object.values(rmap).filter((m) => m.tid).length };
+    return res;
+  }
+
   let halted = false; // 숨은 동기화 화면: 한 번 맞춘 뒤로는 더 돌지 않아요 (곧 닫혀요)
   async function sync() {
     if (halted || !available || !cfg.on || !st.granted || !state.data) return;
@@ -277,7 +373,7 @@ const DevCal = (() => {
         const f = fieldsOf(ev, m);
         if (!m) { // 처음 보는 폰 일정: 제목 · 날짜 · 시각이 같은 할 일이 아직 연결 안 돼 있으면 새로 만들지 않고 이어 붙여요
           const key = `${f.title.trim().toLowerCase()}|${f.dueDate}|${f.dueTime || ''}`;
-          const linkedTids = new Set([...Object.values(map), ...Object.values(cfg.tmap || {})].map((x) => x.tid));
+          const linkedTids = new Set([...Object.values(map), ...Object.values(cfg.tmap || {}), ...Object.values(cfg.rmap || {})].map((x) => x.tid));
           const same = state.data.tasks.find((x) => !linkedTids.has(x.id) && x.dueDate && `${String(x.title || '').trim().toLowerCase()}|${x.dueDate}|${x.dueTime || ''}` === key);
           if (same) { map[ev.id] = { tid: same.id, fp, h: hashOf({ ...same, ...f }), noEnd: false, calId: ev.calId, src: 'link', at: nowAt() }; continue; }
         }
@@ -327,13 +423,18 @@ const DevCal = (() => {
       const tr = await pullSamsungTasks();
       if (tr.changed) changed = true;
       pulledNow += tr.pulled;
-      const fromTasks = new Set(Object.values(cfg.tmap || {}).map((x) => x.tid));
+      // 1-3) 폰 캘린더의 반복 일정 → 회차마다 할 일
+      const rr = await pullRepeats(ids, skippedRepeat > 0);
+      if (rr.changed) changed = true;
+      pulledNow += rr.pulled;
+      // 삼성 "할 일" · 폰 반복 일정에서 온 건 일정으로 또 넣지 않아요
+      const fromTasks = new Set([...Object.values(cfg.tmap || {}), ...Object.values(cfg.rmap || {})].map((x) => x.tid).filter(Boolean));
 
       // 2) 하루플래너 → 폰 캘린더
       if (cfg.push !== false && cfg.target) {
         const evOf = new Map(Object.entries(map).map(([eid, m]) => [m.tid, eid]));
         for (const t of state.data.tasks) {
-          if (fromTasks.has(t.id) && !evOf.has(t.id)) continue; // 삼성 "할 일"에서 온 건 일정으로 또 넣지 않아요
+          if (fromTasks.has(t.id) && !evOf.has(t.id)) continue;
           const eid = evOf.get(t.id);
           const m = eid ? map[eid] : null;
           if (!t.dueDate) { if (m) { await call('remove', { id: eid }).catch(() => {}); delete map[eid]; } continue; }
@@ -352,7 +453,8 @@ const DevCal = (() => {
       st.total = st.total || { pulled: 0, pushed: 0 };
       st.total.pulled += pulledNow;
       st.total.pushed += pushedNow;
-      st.counts = { linked: Object.keys(map).length, pulledNow, pushedNow, pulledTotal: st.total.pulled, pushedTotal: st.total.pushed, skippedRepeat };
+      // 반복 일정: 회차로 가져오면(APK 1.7.0~) 건너뛴 수에 넣지 않아요
+      st.counts = { linked: Object.keys(map).length, pulledNow, pushedNow, pulledTotal: st.total.pulled, pushedTotal: st.total.pushed, skippedRepeat: st.repeat && st.repeat.supported ? 0 : skippedRepeat, repeats: st.repeat && st.repeat.supported ? st.repeat.count : 0, repeatLinked: st.repeat && st.repeat.supported ? st.repeat.linked : 0 };
       // 3) 하루플래너에서 지운 할 일 → 폰에서도 지우기
       //    단, 이 화면이 그 할 일을 본 적이 없고 데이터가 연결보다 오래됐으면(다른 화면이 방금 만든 연결) 지우지 않아요
       for (const [eid, m] of Object.entries(map)) {

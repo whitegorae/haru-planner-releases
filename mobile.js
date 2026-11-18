@@ -20,7 +20,7 @@ const APP_BUILD = (window.api && window.api.build) || ''; // 배포할 때마다
 const PRIORITY = [{ v: 3, label: '높음' }, { v: 2, label: '중간' }, { v: 1, label: '낮음' }, { v: 0, label: '없음' }];
 const REPEATS = [
   { v: 'none', label: '반복 안 함' }, { v: 'daily', label: '매일' }, { v: 'weekdays', label: '평일마다' },
-  { v: 'weekly', label: '매주' }, { v: 'monthly', label: '매월' }, { v: 'yearly', label: '매년' }, { v: 'yearly10', label: '매년 · 10년치 미리 추가' },
+  { v: 'weekly', label: '매주' }, { v: 'monthly', label: '매월' }, { v: 'yearly', label: '매년' }, { v: 'yearly10', label: '매년 · 10년치 미리 추가' }, { v: 'weekrange', label: '매주 · 요일과 기간 골라 미리 추가' },
 ];
 const REMINDS = [
   { v: '', label: '알림 없음' }, { v: '0', label: '정시에' }, { v: '5', label: '5분 전' }, { v: '15', label: '15분 전' },
@@ -202,22 +202,53 @@ function withUndo(message, fn) {
   toast(message, { action: '되돌리기', onAction: () => { Object.assign(state.data, JSON.parse(snap)); commit(); } });
 }
 function addTask(fields) {
-  const t = makeTask(fields);
+  const { wdays, until, ...rest } = fields;
+  const t = makeTask(rest);
   fixEndTime(t);
   state.data.tasks.push(t);
-  if (t.repeat === 'yearly10' && t.dueDate) { makeYearlySeries(t); setTimeout(() => toast(`앞으로 ${SERIES_YEARS}년치까지 ${SERIES_YEARS + 1}개를 추가했어요`), 50); }
-  else if (t.repeat === 'yearly10') t.repeat = 'none';
+  expandSeries(t, wdays, until);
   commit();
   return t;
 }
-// 매년 반복 · 10년치 미리 추가 (모두 같은 seriesId 로 묶어서 한 번에 지울 수 있어요)
+// 반복을 "미리 추가"로 골랐으면 회차들을 만들어요 (첫 회차 = 이 할 일). 모두 같은 seriesId 로 묶어서 한 번에 지울 수 있어요
+function expandSeries(t, wdays, until) {
+  if (t.repeat === 'yearly10') {
+    const n = t.dueDate ? makeYearlySeries(t) : 0;
+    t.repeat = 'none';
+    if (n) setTimeout(() => toast(`앞으로 ${SERIES_YEARS}년치까지 ${n + 1}개를 만들었어요`), 50);
+  } else if (t.repeat === 'weekrange') {
+    const n = t.dueDate ? makeWeeklySeries(t, wdays, until) : 0;
+    t.repeat = 'none';
+    if (n > 0) setTimeout(() => toast(`매주 ${weekDaysText(wdays)} · ${shortMd(until)}까지 ${n}개를 만들었어요`), 50);
+    else if (n === 0) setTimeout(() => toast('고른 기간에 고른 요일이 없어요'), 50);
+  }
+}
+const inSeries = (t) => !!(t.seriesId && state.data.tasks.some((x) => x !== t && x.seriesId === t.seriesId));
 function makeYearlySeries(t) {
   t.repeat = 'none';
-  if (t.seriesId && state.data.tasks.some((x) => x !== t && x.seriesId === t.seriesId)) return 0;
+  if (inSeries(t)) return 0;
   t.seriesId = t.seriesId || `s-${t.id}`;
+  t.seriesKind = 'yearly';
   const copies = yearlySeriesCopies(t, uid);
   state.data.tasks.push(...copies);
   return copies.length;
+}
+// 매주 고른 요일마다, 이 할 일 날짜부터 until 까지 (이 할 일은 첫 회차 날로 옮겨요). 만든 수 (이 할 일 포함), 이미 묶음이면 -1
+function makeWeeklySeries(t, days, until) {
+  t.repeat = 'none';
+  if (inSeries(t)) return -1;
+  const dates = weeklySeriesDates(t.dueDate, until, days);
+  if (!dates.length) return 0;
+  if (t.dueDate !== dates[0]) {
+    const span = t.endDate && t.endDate > t.dueDate ? diffDays(t.endDate, t.dueDate) : 0;
+    t.dueDate = dates[0];
+    t.endDate = span ? addDays(dates[0], span) : null;
+  }
+  t.seriesId = `s-${t.id}`;
+  t.seriesKind = 'weekly';
+  t.seriesRule = { days: [...new Set(days.map(Number))].sort(), until };
+  state.data.tasks.push(...seriesCopiesOn(t, dates.slice(1), uid));
+  return dates.length;
 }
 const seriesOf = (t) => (t && t.seriesId ? state.data.tasks.filter((x) => x.seriesId === t.seriesId) : []);
 function toggleDone(id) {
@@ -638,7 +669,7 @@ function taskSheetHTML() {
         <select id="tsList" aria-label="목록">${state.data.lists.map((l) => `<option value="${l.id}" ${l.id === d.listId ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
       <button class="m-icbtn" data-a="ts-colors" aria-label="색상"><span class="m-dotlg" style="background:${esc(ts.color || list.color)}"></span></button>
       <span class="flex1"></span>
-      ${t && seriesOf(t).length > 1 ? `<button class="m-chip danger" data-a="ts-delete-series">${icon('trash', 'mini')}매년 ${seriesOf(t).length}개 모두 삭제</button>` : ''}
+      ${t && seriesOf(t).length > 1 ? `<button class="m-chip danger" data-a="ts-delete-series">${icon('trash', 'mini')}반복 ${seriesOf(t).length}개 모두 삭제</button>` : ''}
       ${t ? `<button class="m-icbtn danger" data-a="ts-delete" aria-label="${seriesOf(t).length > 1 ? '이 날만 삭제' : '삭제'}">${icon('trash')}</button>` : `<button class="m-send" data-a="ts-save" aria-label="추가">${icon('send')}</button>`}
     </div>
   </div>`;
@@ -687,11 +718,13 @@ function applyEdit() {
   if (t.dueDate !== d.date || t.dueTime !== d.time || t.remind !== d.remind) t.reminded = null;
   Object.assign(t, { dueDate: d.date, endDate: d.endDate, dueTime: d.time, endTime: d.endTime, remind: d.date ? d.remind : null, repeat: d.date ? d.repeat || 'none' : 'none', priority: d.priority, listId: d.listId, color: taskSheet.color });
   fixEndTime(t);
-  if (t.repeat === 'yearly10') { // 고친 할 일도 10년치로 펼쳐요
-    const n = t.dueDate ? makeYearlySeries(t) : 0;
+  if (t.repeat === 'yearly10' || t.repeat === 'weekrange') { // 고친 할 일도 회차들로 펼쳐요
+    if (inSeries(t)) toast('이미 반복 묶음이에요. 묶음을 지운 뒤 다시 만들어 주세요');
+    expandSeries(t, d.wdays, d.until);
     t.repeat = 'none';
     d.repeat = 'none';
-    if (n) toast(`앞으로 ${SERIES_YEARS}년치까지 ${n}개를 더 추가했어요`);
+    d.date = t.dueDate;
+    d.endDate = t.endDate;
   }
   commit();
 }
@@ -707,7 +740,7 @@ function saveNewTask(ts) {
   if (!title) return false;
   const notes = ($('#tsNotes') ? $('#tsNotes').value : ts.notes || '').replace(/\s+$/, '');
   const d = ts.d;
-  addTask({ title, notes, listId: d.listId, color: ts.color, priority: d.priority, dueDate: d.date, endDate: d.endDate, dueTime: d.time, endTime: d.endTime, remind: d.date ? d.remind : null, repeat: d.date ? d.repeat : 'none' });
+  addTask({ title, notes, listId: d.listId, color: ts.color, priority: d.priority, dueDate: d.date, endDate: d.endDate, dueTime: d.time, endTime: d.endTime, remind: d.date ? d.remind : null, repeat: d.date ? d.repeat : 'none', wdays: d.wdays, until: d.until });
   toast(`"${title}" 추가했어요`);
   return true;
 }
@@ -747,13 +780,34 @@ function dateSheetHTML() {
         <select id="dpRemind" ${x.date ? '' : 'disabled'}>${REMINDS.map((r) => `<option value="${r.v}" ${String(x.remind ?? '') === r.v ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
       <label class="m-dp-row">${icon('repeat')}<span>반복</span><span class="flex1"></span>
         <select id="dpRepeat" ${x.date ? '' : 'disabled'}>${REPEATS.map((r) => `<option value="${r.v}" ${x.repeat === r.v ? 'selected' : ''}>${r.label}</option>`).join('')}</select></label>
+      ${x.repeat === 'weekrange' && x.date ? weekRangeHTML(x) : ''}
     </div>
     <div class="m-dp-foot"><button class="m-btn" data-a="dp-cancel">취소</button><button class="m-btn primary" data-a="dp-ok">확인</button></div>
   </div>`;
 }
+// 매주 · 요일과 기간: 요일 체크 + 끝나는 날 (시작 = 고른 날짜)
+const WR_WEEKS = [[4, '4주'], [8, '8주'], [12, '12주'], [26, '6개월'], [52, '1년']];
+function wrFix(x) {
+  if (x.repeat !== 'weekrange' || !x.date) return;
+  if (!x.wdays) x.wdays = [parseYmd(x.date).getDay()];
+  if (!x.until || x.until < x.date) x.until = addDays(x.date, 8 * 7 - 1);
+  if (diffDays(x.until, x.date) > 3 * 366) x.until = addDays(x.date, 3 * 366);
+}
+function weekRangeHTML(x) {
+  wrFix(x);
+  const days = new Set(x.wdays || []);
+  const n = weeklySeriesDates(x.date, x.until, x.wdays).length;
+  const weeks = Math.floor(diffDays(x.until, x.date) / 7) + 1;
+  return `<div class="m-wr">
+    <div class="m-wr-days">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="${days.has(d) ? 'on' : ''}${d === 0 ? ' sun' : d === 6 ? ' sat' : ''}" data-a="dp-wr-day" data-d="${d}" role="checkbox" aria-checked="${days.has(d)}">${WEEK_KO[d]}</button>`).join('')}</div>
+    <label class="m-dp-row sub"><span>${shortMd(x.date)} 부터</span><span class="flex1"></span><input type="date" id="dpUntil" value="${x.until}" min="${x.date}"><span>까지</span></label>
+    <div class="m-wr-quick">${WR_WEEKS.map(([w, label]) => `<button class="${weeks === w ? 'on' : ''}" data-a="dp-wr-weeks" data-n="${w}">${label}</button>`).join('')}</div>
+    <p class="m-dp-hint">${n ? `${weeks}주 동안 매주 ${weekDaysText(x.wdays)} · 할 일 <b>${n}개</b>를 만들어요` : '요일을 하나 이상 골라 주세요'}</p>
+  </div>`;
+}
 function openDateSheet() {
   const d = taskSheet.d;
-  dateDraft = { date: d.date, endDate: d.endDate, time: d.time, endTime: d.endTime, remind: d.remind, repeat: d.repeat || 'none', rangeMode: !!(d.endDate && d.endDate > d.date) };
+  dateDraft = { date: d.date, endDate: d.endDate, time: d.time, endTime: d.endTime, remind: d.remind, repeat: d.repeat || 'none', rangeMode: !!(d.endDate && d.endDate > d.date), wdays: d.wdays || null, until: d.until || null };
   dpMonth = (d.date || todayStr()).slice(0, 7);
   openSheet(dateSheetHTML(), { cls: 'date' });
 }
@@ -764,7 +818,8 @@ function applyDate(x) {
   const tmp = { dueDate: x.date, endDate: x.endDate, dueTime: x.time, endTime: x.endTime };
   fixEndTime(tmp);
   x.endTime = tmp.endTime;
-  Object.assign(taskSheet.d, { date: x.date, endDate: x.endDate, time: x.time, endTime: x.endTime, remind: x.remind, repeat: x.repeat });
+  wrFix(x);
+  Object.assign(taskSheet.d, { date: x.date, endDate: x.endDate, time: x.time, endTime: x.endTime, remind: x.remind, repeat: x.repeat, wdays: x.wdays, until: x.until });
   closeSheet({ silent: true });
   applyEdit();
   refreshTaskSheet();
@@ -945,7 +1000,7 @@ document.addEventListener('click', (e) => {
       const t0 = taskById(taskSheet.id);
       const list = seriesOf(t0);
       if (!t0 || list.length < 2 || !canEdit()) break;
-      askConfirm(`매년 반복 일정 ${list.length}개를 모두 지울까요?`, { okText: '모두 지우기', danger: true }).then((ok) => {
+      askConfirm(`${seriesName(t0)} 일정 ${list.length}개를 모두 지울까요?`, { okText: '모두 지우기', danger: true }).then((ok) => {
         if (!ok) return;
         closeSheet({ silent: true });
         taskSheet = null;
@@ -983,6 +1038,15 @@ document.addEventListener('click', (e) => {
     case 'dp-range': dateDraft.rangeMode = el.dataset.v === '1'; if (!dateDraft.rangeMode) dateDraft.endDate = null; if (dateDraft.rangeMode && !dateDraft.date) dateDraft.date = todayStr(); refreshDateSheet(); break;
     case 'dp-clear-time': dateDraft.time = null; dateDraft.endTime = null; refreshDateSheet(); break;
     case 'dp-clear-end': dateDraft.endTime = null; refreshDateSheet(); break;
+    case 'dp-wr-day': {
+      const dd = Number(el.dataset.d);
+      const s = new Set(dateDraft.wdays || []);
+      if (s.has(dd)) s.delete(dd); else s.add(dd);
+      dateDraft.wdays = [...s];
+      refreshDateSheet();
+      break;
+    }
+    case 'dp-wr-weeks': if (dateDraft.date) { dateDraft.until = addDays(dateDraft.date, Number(el.dataset.n) * 7 - 1); refreshDateSheet(); } break;
     case 'dp-cancel': closeSheet({ silent: true }); break;
     case 'dp-ok': applyDate(dateDraft); break;
     default: break;
@@ -1013,7 +1077,8 @@ document.addEventListener('change', (e) => {
   if (t.id === 'dpTime') { const old = dateDraft.time; dateDraft.time = t.value || null; if (!dateDraft.time) dateDraft.endTime = null; else if (old && dateDraft.endTime) dateDraft.endTime = hmStr(clamp(hm(dateDraft.endTime) + hm(dateDraft.time) - hm(old), 0, 23 * 60 + 59)); refreshDateSheet(); }
   if (t.id === 'dpEnd') { dateDraft.endTime = t.value || null; if (dateDraft.endTime && hm(dateDraft.endTime) <= hm(dateDraft.time) && !dateDraft.endDate) { toast('끝나는 시각은 시작보다 뒤여야 해요'); dateDraft.endTime = null; } refreshDateSheet(); }
   if (t.id === 'dpRemind') dateDraft.remind = t.value === '' ? null : Number(t.value);
-  if (t.id === 'dpRepeat') dateDraft.repeat = t.value;
+  if (t.id === 'dpRepeat') { dateDraft.repeat = t.value; refreshDateSheet(); }
+  if (t.id === 'dpUntil' && t.value) { dateDraft.until = t.value < dateDraft.date ? dateDraft.date : t.value; refreshDateSheet(); }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing && e.target.id === 'tsTitle') {
@@ -1378,7 +1443,7 @@ function calCardsHTML() {
           <div class="m-checks">${cals.map((x) => `<label><input type="checkbox" data-dc="cal" value="${esc(x.id)}" ${(cfg.calIds || []).includes(x.id) ? 'checked' : ''}><span class="m-dot" style="background:${esc(x.color || '#999')}"></span><span class="m-cal-name">${esc(x.name || x.account || '캘린더')}</span>${tag(x)}</label>`).join('') || '<span class="m-muted">폰에 캘린더가 없어요</span>'}</div>
           <p class="m-muted small">공휴일은 하루플래너가 따로 보여줘서 기본으로 빼 뒀어요.</p>
           <div class="m-set"><span>할 일을 넣을 캘린더</span><select id="mDcTarget" class="m-select">${writable.length ? '' : '<option value="">(쓸 수 있는 캘린더 없음)</option>'}${writable.map((x) => `<option value="${esc(x.id)}" ${x.id === cfg.target ? 'selected' : ''}>${esc(x.name || x.account)}${x.google ? ' (구글)' : ''}</option>`).join('')}</select></div>
-          ${c ? `<p class="m-dc-count">폰 캘린더와 연결된 일정 <b>${c.linked}</b>개<br><span>앱을 연 뒤로 폰에서 가져온 것 ${c.pulledTotal}개 · 폰으로 보낸 것 ${c.pushedTotal}개${c.skippedRepeat ? ` · 반복 일정 ${c.skippedRepeat}개는 아직 가져오지 않아요` : ''}</span></p>` : ''}
+          ${c ? `<p class="m-dc-count">폰 캘린더와 연결된 일정 <b>${c.linked}</b>개<br><span>앱을 연 뒤로 폰에서 가져온 것 ${c.pulledTotal}개 · 폰으로 보낸 것 ${c.pushedTotal}개${c.repeats ? ` · 반복 일정 ${c.repeats}개 (회차 ${c.repeatLinked}개)` : ''}${c.skippedRepeat ? ` · 반복 일정 ${c.skippedRepeat}개는 새 앱(1.7.0)부터 가져와요` : ''}</span></p>` : ''}
           ${d.tasks ? `<p class="m-dc-count">${d.tasks.supported ? `삼성 캘린더 <b>할 일</b>도 가져와요 · 연결된 할 일 <b>${d.tasks.linked}</b>개` : d.tasks.why === 'old-app' ? '삼성 캘린더 <b>할 일</b>을 가져오려면 새 앱(1.5.0)으로 업데이트해 주세요' : `이 폰에서는 삼성 캘린더 <b>할 일</b>을 읽을 수 없어요${d.tasks.why ? ` <span>(${esc(String(d.tasks.why).slice(0, 80))})</span>` : ''}`}</p>` : ''}
           <div class="m-set"><span>가져올 기간</span><select id="mDcPast" class="m-select">${[['all', '전체'], ['365', '최근 1년'], ['30', '최근 30일']].map(([v, l]) => `<option value="${v}" ${String(cfg.past || 'all') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="m-set"><span>가져온 일정 목록</span><select id="mDcList" class="m-select">${opts(cfg.listId || 'inbox')}</select></div>
