@@ -1188,6 +1188,7 @@ async function startCloud() {
   setTimeout(showWhatsNew, 1200);
   if (typeof DevCal !== 'undefined') DevCal.start();
   if (typeof CalSync !== 'undefined') CalSync.refresh();
+  diagReport({ startedAt: new Date().toISOString() });
 }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-a="retry-boot"]')) startCloud(); });
 Cloud.onStatus(() => { if (state.data) { const s = $('.m-sync'); if (s) s.outerHTML = syncDot(); if (state.tab === 'settings') render(); } });
@@ -1683,6 +1684,43 @@ async function boot() {
   await startCloud();
 }
 
+// ---------- 기기 상태 기록 (폰 캘린더 연동이 왜 안 되는지 서버에서 볼 수 있게, 내 기기 것만) ----------
+const DIAG_DEV = (() => { try { let d = localStorage.getItem('haru-device-id'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('haru-device-id', d); } return d; } catch (_) { return 'unknown'; } })();
+const diagExtra = {};
+let diagT = 0;
+let diagLast = '';
+let diagLastAt = 0;
+function diagData() {
+  const d = typeof DevCal !== 'undefined' ? DevCal.status() : null;
+  const c = typeof DevCal !== 'undefined' ? DevCal.config() : {};
+  return {
+    app: APP_VERSION, apk: ANDROID_APP ? ANDROID_APP.slice(1).join('.') : null, ua: navigator.userAgent.slice(0, 180), bg: !!(typeof BG_DEVCAL !== 'undefined' && BG_DEVCAL),
+    devcal: d && {
+      available: d.available, granted: d.granted, on: !!c.on, busy: d.busy, error: d.error || null, warn: d.warn || null,
+      lastAt: d.lastAt ? new Date(d.lastAt).toISOString() : null, changedAt: d.changedAt ? new Date(d.changedAt).toISOString() : null, changedN: d.changedN || 0,
+      tasks: d.tasks || null, counts: d.counts || null, calIds: c.calIds || [], target: c.target || null, listId: c.listId || null,
+      map: Object.keys(c.map || {}).length, tmap: Object.keys(c.tmap || {}).length,
+      calendars: (d.calendars || []).map((x) => ({ id: x.id, name: x.name, type: x.accountType, w: x.writable, v: x.visible, g: x.google, h: x.holiday })),
+    },
+    ...diagExtra,
+  };
+}
+async function diagNow() {
+  if (DEMO || !Cloud.isActive() || !Cloud.user()) return;
+  const data = diagData();
+  const key = JSON.stringify(data);
+  if (key === diagLast && Date.now() - diagLastAt < 5 * 60 * 1000) return;
+  diagLast = key;
+  diagLastAt = Date.now();
+  try { await Cloud.client().from('device_diag').upsert({ user_id: Cloud.user().id, device: DIAG_DEV, data: { ...data, at: new Date().toISOString() }, updated_at: new Date().toISOString() }); } catch (_) { /* 표가 아직 없으면 그냥 넘어가요 */ }
+}
+function diagReport(extra) {
+  Object.assign(diagExtra, extra || {});
+  clearTimeout(diagT);
+  diagT = setTimeout(diagNow, 4000);
+}
+if (typeof DevCal !== 'undefined' && DevCal.onStatus) DevCal.onStatus(() => diagReport());
+
 // ---------- 안드로이드: 앱이 닫혀 있을 때 폰 캘린더가 바뀌면 (APK 1.6.0~) ----------
 // 폰이 보이지 않는 화면으로 이 페이지를 "?bg=devcal" 로 열어요 → 화면은 그리지 않고
 // 로그인 확인 → 서버에서 받기 → 폰 캘린더(삼성 일정 · 할 일) 맞추기 → 서버에 올리기 → 폰에 "끝났어요"
@@ -1702,6 +1740,9 @@ async function bgDevcal() {
     Cloud.start(rows, () => state.data, () => { state.dataAt = Date.now(); });
     const r = await DevCal.runOnce();
     if (Cloud.isActive()) await Cloud.flushNow(15000).catch(() => {});
+    Object.assign(diagExtra, { lastBg: new Date().toISOString(), lastBgResult: r });
+    diagLast = '';
+    await diagNow();
     done(r && r.error ? `error:${r.error}` : 'ok');
   } catch (e) {
     done(`error:${(e && e.message) || e}`);

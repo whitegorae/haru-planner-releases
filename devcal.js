@@ -174,7 +174,7 @@ const DevCal = (() => {
       st.tasks = { supported: false, why: /not implemented|unimplemented|is not a function|no bridge/i.test(String(e && e.message)) ? 'old-app' : String((e && e.message) || e) };
       return res;
     }
-    if (!r || !r.supported) { st.tasks = { supported: false, why: (r && r.why) || '' }; return res; }
+    if (!r || !r.supported) { st.tasks = { supported: false, why: (r && r.why) || '', cols: (r && r.cols) || '' }; return res; }
     const list = Array.isArray(r.tasks) ? r.tasks : [];
     const tmap = (cfg.tmap = cfg.tmap || {});
     const seen = new Set();
@@ -222,7 +222,7 @@ const DevCal = (() => {
         delete tmap[id];
       }
     }
-    st.tasks = { supported: true, count: list.filter((k) => !k.done).length, linked: Object.values(tmap).filter((x) => x.tid).length };
+    st.tasks = { supported: true, uri: r.uri || '', cols: r.cols || '', total: list.length, count: list.filter((k) => !k.done).length, linked: Object.values(tmap).filter((x) => x.tid).length };
     return res;
   }
 
@@ -423,7 +423,7 @@ const DevCal = (() => {
     try {
       const p = C.Plugins && C.Plugins.HaruCalendar;
       // 앱이 뒤에 있으면 타이머가 늦게 돌아서, 알림이 오면 바로 맞추고 → 서버에 올린 뒤 → 폰에 "끝났어요" (폰이 그때까지 앱을 깨워 둬요)
-      const onChanged = () => { clearTimeout(schedT); syncAndReport(); };
+      const onChanged = () => { st.changedAt = Date.now(); st.changedN = (st.changedN || 0) + 1; clearTimeout(schedT); syncAndReport(); };
       if (p && p.addListener) p.addListener('changed', onChanged);
       else if (C.addListener) C.addListener('HaruCalendar', 'changed', onChanged);
     } catch (_) { /* 켜져 있을 때만 30초마다 맞춰요 */ }
