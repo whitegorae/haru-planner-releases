@@ -185,7 +185,18 @@ function saveCacheSoon() {
   cacheT = setTimeout(() => { try { localStorage.setItem(CACHE_KEY, JSON.stringify(state.data)); } catch (_) { /* 용량 초과 등 */ } }, 600);
 }
 function loadCache() { try { return normalize(JSON.parse(localStorage.getItem(CACHE_KEY))); } catch (_) { return null; } }
+// 반복 묶음 한꺼번에 고치기: "N개 모두"를 켠 할 일에서 바꾼 것은 저장할 때마다 묶음 전체에 넣어요
+let seriesEdit = null; // { id, snap }
+const seriesEditOn = (t) => !!(t && seriesEdit && seriesEdit.id === t.id && seriesOf(t).length > 1);
+function seriesSync() {
+  if (!seriesEdit || !state.data) return;
+  const t = taskById(seriesEdit.id);
+  if (!t || !t.seriesId) { seriesEdit = null; return; }
+  seriesApply(t, seriesEdit.snap, seriesOf(t));
+  seriesEdit.snap = seriesSnap(t);
+}
 function save() {
+  seriesSync();
   if (!DEMO && Cloud.isActive()) { Cloud.saveDevice(S()); Cloud.schedulePush(); bkLiveSoon(); }
   saveCacheSoon();
   if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 폰 캘린더로도 보내요
@@ -657,6 +668,9 @@ function taskSheetHTML() {
       <span class="flex1"></span>
       <button class="m-icbtn m-flag p${d.priority}" data-a="ts-prio" aria-label="우선순위">${icon('flag')}</button>
     </div>
+    ${t && seriesOf(t).length > 1 ? `<div class="m-scope"><span class="m-scope-l">${icon('repeat', 'mini')}고칠 범위</span><div class="m-scope-seg">
+      <button class="${seriesEditOn(t) ? '' : 'on'}" data-a="ts-scope" data-all="0">이 날만</button>
+      <button class="${seriesEditOn(t) ? 'on all' : ''}" data-a="ts-scope" data-all="1">반복 ${seriesOf(t).length}개 모두</button></div></div>` : ''}
     <textarea id="tsTitle" class="m-ts-title" rows="1" placeholder="무엇을 하고 싶으신가요?" enterkeyhint="${ts.mode === 'add' ? 'send' : 'done'}">${t ? esc(t.title) : esc(ts.title || '')}</textarea>
     <textarea id="tsNotes" class="m-ts-notes" rows="2" placeholder="메모">${t ? esc(t.notes || '') : esc(ts.notes || '')}</textarea>
     ${t && t.subtasks.length ? `<div class="m-subs">${t.subtasks.map((s) => `<button class="m-sub ${s.done ? 'on' : ''}" data-a="ts-sub" data-sub="${s.id}"><span class="m-check sm ${s.done ? 'on' : ''}">${icon('check')}</span>${esc(s.title)}</button>`).join('')}</div>` : ''}
@@ -679,6 +693,7 @@ function openTaskSheet(mode, opts = {}) {
   if (mode === 'edit') {
     const t = taskById(opts.id);
     if (!t) return;
+    if (seriesEdit && seriesEdit.id !== t.id) seriesEdit = null;
     taskSheet = { mode, id: t.id, color: t.color || null, d: { date: t.dueDate, endDate: t.endDate, time: t.dueTime, endTime: t.endTime || null, remind: t.remind ?? null, repeat: t.repeat || 'none', priority: t.priority || 0, listId: t.listId } };
   } else {
     taskSheet = { mode, color: null, d: { date: opts.date ?? null, endDate: null, time: null, endTime: null, remind: null, repeat: 'none', priority: 0, listId: opts.listId || 'inbox' } };
@@ -696,6 +711,7 @@ function openTaskSheet(mode, opts = {}) {
       taskSheet = null;
       if (!ts) return;
       if (ts.mode === 'add') { if (!discard) saveNewTask(ts); } else finishEdit(ts);
+      seriesEdit = null; // 다음에 열 때는 다시 "이 날만"부터
     },
   });
 }
@@ -993,6 +1009,15 @@ document.addEventListener('click', (e) => {
       const t = taskById(taskSheet.id);
       const s = t && t.subtasks.find((x) => x.id === el.dataset.sub);
       if (s) { s.done = !s.done; commit(); refreshTaskSheet(); }
+      break;
+    }
+    case 'ts-scope': { // 고칠 범위: 이 날만 / 반복 묶음 모두
+      const t0 = taskById(taskSheet && taskSheet.id);
+      if (!t0) break;
+      save(); // 지금까지 고친 건 지금 범위대로 먼저 저장
+      seriesEdit = el.dataset.all === '1' ? { id: t0.id, snap: seriesSnap(t0) } : null;
+      refreshTaskSheet();
+      if (seriesEdit) toast(`이제부터 고치는 건 반복 ${seriesOf(t0).length}개에 모두 들어가요`);
       break;
     }
     case 'ts-delete': { const tid = taskSheet.id; closeSheet({ silent: true }); taskSheet = null; deleteTask(tid); break; }

@@ -105,6 +105,44 @@ function seriesCopiesOn(base, dates, newId) {
   const span = base.endDate && base.endDate > base.dueDate ? diffDays(base.endDate, base.dueDate) : 0;
   return dates.map((due) => ({ ...JSON.parse(JSON.stringify(base)), id: newId(), dueDate: due, endDate: span ? addDays(due, span) : null, done: false, doneAt: null, reminded: null, gcal: null, createdAt: Date.now(), repeat: 'none', seriesId: base.seriesId, seriesKind: base.seriesKind, timeSpent: 0, subtasks: (base.subtasks || []).map((s) => ({ ...s, done: false })) }));
 }
+// 반복 묶음 한꺼번에 고치기: 한 회차에서 바꾼 것을 같은 묶음의 다른 회차에도 똑같이 넣어요.
+// 날짜는 "옮긴 날 수"만큼 다 같이 옮기고, 완료 여부 · 기록 시간 · 구글 연결은 회차마다 그대로 둬요.
+const SERIES_EDIT_FIELDS = ['title', 'notes', 'dueTime', 'endTime', 'listId', 'priority', 'color', 'remind'];
+const seriesSpan = (t) => (t.dueDate && t.endDate && t.endDate > t.dueDate ? diffDays(t.endDate, t.dueDate) : 0);
+const seriesSubsKey = (t) => JSON.stringify((t.subtasks || []).map((s) => [s.id, s.title]));
+function seriesSnap(t) {
+  const o = { dueDate: t.dueDate || null, span: seriesSpan(t), subs: seriesSubsKey(t) };
+  for (const f of SERIES_EDIT_FIELDS) o[f] = t[f] ?? null;
+  return o;
+}
+// src 가 snap 이후로 바뀐 만큼 others 에 넣어요. 바꾼 회차 수를 돌려줘요
+function seriesApply(src, snap, others) {
+  const undated = !src.dueDate && snap.dueDate; // 이 회차만 날짜를 지운 경우: 다른 회차 시간 · 알림은 그대로
+  const changed = SERIES_EDIT_FIELDS.filter((f) => (src[f] ?? null) !== snap[f] && !(undated && ['dueTime', 'endTime', 'remind'].includes(f)));
+  const shift = src.dueDate && snap.dueDate && src.dueDate !== snap.dueDate ? diffDays(src.dueDate, snap.dueDate) : 0;
+  const span = seriesSpan(src);
+  const spanChanged = !!src.dueDate && span !== snap.span;
+  const subsChanged = seriesSubsKey(src) !== snap.subs;
+  if (!changed.length && !shift && !spanChanged && !subsChanged) return 0;
+  const resetRemind = shift || changed.includes('dueTime') || changed.includes('remind');
+  let n = 0;
+  for (const x of others) {
+    if (x === src || x.id === src.id) continue;
+    for (const f of changed) x[f] = src[f] ?? null;
+    if (x.dueDate && (shift || spanChanged)) {
+      if (shift) x.dueDate = addDays(x.dueDate, shift);
+      const sp = spanChanged ? span : seriesSpan(x);
+      x.endDate = sp > 0 ? addDays(x.dueDate, sp) : null;
+    }
+    if (subsChanged) {
+      const was = new Map((x.subtasks || []).map((s) => [s.id, s]));
+      x.subtasks = (src.subtasks || []).map((s) => ({ ...s, done: was.has(s.id) ? !!was.get(s.id).done : false }));
+    }
+    if (resetRemind) x.reminded = null;
+    n++;
+  }
+  return n;
+}
 const WEEK_KO = ['일', '월', '화', '수', '목', '금', '토'];
 // "매주 월 · 수 · 금" 같은 글
 const weekDaysText = (days) => { const s = new Set((days || []).map(Number)); return [1, 2, 3, 4, 5, 6, 0].filter((d) => s.has(d)).map((d) => WEEK_KO[d]).join(' · '); };

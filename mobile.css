@@ -266,6 +266,12 @@ input::placeholder, textarea::placeholder { color: var(--text-3); font-family: v
 
 /* 할 일 시트 */
 .m-ts-top { display: flex; align-items: center; gap: 10px; }
+.m-scope { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; flex-wrap: wrap; }
+.m-scope-l { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.m-scope-seg { display: inline-flex; background: var(--hover); border-radius: 999px; padding: 3px; gap: 2px; }
+.m-scope-seg button { height: 32px; padding: 0 14px; border-radius: 999px; border: 0; background: transparent; font: inherit; font-size: 14px; color: var(--text-2); white-space: nowrap; }
+.m-scope-seg button.on { background: var(--panel); color: var(--accent); box-shadow: var(--shadow-soft); }
+.m-scope-seg button.on.all { background: var(--accent); color: #fff; }
 .m-chip { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 12px; font-size: 15px; background: var(--hover); color: var(--text-2); max-width: 100%; position: relative; }
 .m-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-chip .ic { width: 18px; height: 18px; }
