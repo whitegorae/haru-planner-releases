@@ -158,6 +158,7 @@ const DevMode = (() => {
     if (!open) return `<div class="dev ${cls} closed" id="devPanel">${head}</div>`;
     return `<div class="dev ${cls}" id="devPanel">
       ${head}
+      ${cls === 'pc' && typeof UiTweaks !== 'undefined' ? '<button class="dev-btn dev-ui-edit" data-dev="ui-edit">화면 고치기 모드 켜기</button><p class="dev-note">글자 · 상자를 눌러서 크기 · 여백 · 줄바꿈 · 글자를 1px 단위로 고쳐요. 이 PC 화면에만 적용되고, "반영해줘"라고 하면 코드로 옮겨서 모두에게 내보내요.</p>' : ''}
       <p class="dev-sub">Supabase 무료 플랜 사용량 · ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')} 기준</p>
       ${bar('데이터베이스', Number(d.db_bytes) || 0, LIMITS.db, size)}
       ${bar('파일 저장소 (사진)', Number(d.storage_bytes) || 0, LIMITS.storage, size)}

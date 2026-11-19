@@ -340,6 +340,23 @@ const TABS = [
   { k: 'settings', label: '설정', ic: 'settings' },
 ];
 
+// 아이폰 홈 화면 앱: iOS 가 화면 높이를 위쪽 상태 표시줄만큼 짧게 알려 줘서 아래 탭 밑에 빈 띠가 생겨요
+//  → 실제 화면 높이로 늘려요 (키보드가 올라와 짧아진 경우처럼 차이가 크면 건드리지 않아요)
+function fitStandaloneHeight() {
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const root = document.documentElement;
+  if (!standalone || !ios) { root.style.removeProperty('--app-h'); return; }
+  const portrait = innerHeight >= innerWidth;
+  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  const gap = full - innerHeight;
+  if (gap > 0 && gap <= 100) root.style.setProperty('--app-h', `${full}px`);
+  else root.style.removeProperty('--app-h');
+}
+fitStandaloneHeight();
+addEventListener('resize', fitStandaloneHeight);
+addEventListener('orientationchange', () => setTimeout(fitStandaloneHeight, 300));
+
 function render() {
   if (!state.data) return;
   syncWidget();
@@ -347,7 +364,7 @@ function render() {
   if (!app.querySelector('.m-tabs')) {
     app.innerHTML = `<main id="view" class="m-view"></main>
       <button class="m-fab" data-a="fab" aria-label="추가">${icon('plus')}</button>
-      <nav class="m-tabs">${TABS.map((t) => `<button data-a="tab" data-k="${t.k}"><span class="m-tab-ic">${icon(t.ic)}</span><span>${t.label}</span></button>`).join('')}</nav>`;
+      <nav class="m-tabs">${TABS.map((t) => `<button data-a="tab" data-k="${t.k}" aria-label="${t.label}" title="${t.label}"><span class="m-tab-ic">${icon(t.ic)}</span></button>`).join('')}</nav>`;
   }
   $$('.m-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.k === state.tab));
   $('.m-fab').hidden = state.tab === 'settings';
