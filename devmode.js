@@ -177,7 +177,7 @@ const DevMode = (() => {
       ${peopleHtml(d.people, e)}
       <button class="dev-btn" data-dev="refresh">다시 읽기</button>
       <details class="dev-log"><summary>지금까지 업데이트 내역 전체 (${all.length}개 버전)</summary>
-        ${all.map((v) => `<div class="dev-v"><b>${e(v.v)}</b><span>${e(v.date || '')}</span><ul>${v.items.map((s) => `<li>${e(s)}</li>`).join('')}</ul></div>`).join('')}
+        ${all.map((v) => `<div class="dev-v"><b>${e(v.v)}</b><span>${e(v.date || '')}${v.dev ? ' · 개발자만 업데이트' : ''}</span><ul>${v.items.map((s) => `<li>${e(s)}</li>`).join('')}</ul></div>`).join('')}
       </details>
     </div>`;
   }

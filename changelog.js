@@ -3,13 +3,29 @@
 /* 업데이트 내역 — 데스크톱 설정 · 폰 앱 설정에 보여줘요.
  * 새 버전을 올릴 때 맨 위에 한 줄씩 추가해 주세요. (짧게, 사용하는 사람 눈높이로)
  * 앞에 [PC] / [폰] / [안드로이드] 를 붙이면 그 기기에만 해당하는 내용이에요.
+ * dev: true 인 버전(또는 [개발자] 로 시작하는 줄)은 개발자(관리자) 계정에만 보이고 "개발자만 업데이트" 표시가 붙어요.
+ *  관리자인지는 서버(admin_usage)가 알려줘요 → 앱에는 관리자 이메일을 적지 않아요.
  */
 const CHANGELOG = [
+  {
+    v: '1.22.5', date: '2026-11-19', dev: true,
+    items: [
+      '[PC] 화면 고치기 모드: 누른 그 한 곳만 바뀌어요 (같은 종류 전부 바꾸기는 없앴어요)',
+      '[PC] 화면 고치기 모드: 글자에 넣은 엔터(줄바꿈)와 띄어쓰기가 화면에 그대로 보여요',
+      '[PC] 업데이트 내역에 개발자만 업데이트한 버전도 이 계정에서만 보여요',
+    ],
+  },
   {
     v: '1.22.4', date: '2026-11-19',
     items: [
       '[폰] 아래 탭을 글자 없이 아이콘만 보여줘요',
       '[폰] 아이폰 홈 화면 앱에서 아래 탭 밑에 빈 띠가 생기던 걸 고쳤어요 (탭이 화면 맨 아래까지 닿아요)',
+    ],
+  },
+  {
+    v: '1.22.3', date: '2026-11-19', dev: true,
+    items: [
+      '[PC] 개발자 모드에 "화면 고치기 모드"를 넣었어요: 글자 · 상자를 눌러 크기 · 여백 · 줄바꿈 · 글자를 1px 단위로 고쳐요 (이 PC 화면에만 적용)',
     ],
   },
   {
@@ -271,16 +287,27 @@ const CHANGELOG = [
 ];
 
 // 이 기기에 맞는 내역만 (태그는 떼고 보여줘요)
-function changelogFor(platform) {
+// 개발자(관리자) 계정인지: 서버가 관리자라고 확인해 준 경우만 (개발자 모드가 보이는 계정)
+const changelogIsDev = () => typeof DevMode !== 'undefined' && !!DevMode.get();
+function changelogFor(platform, dev = changelogIsDev()) {
+  const DEV_TAG = /^\[개발자\]\s*/;
   const ok = (s) => {
+    if (DEV_TAG.test(s)) { if (!dev) return false; s = s.replace(DEV_TAG, ''); }
     const m = /^\[(PC|폰|안드로이드)\]\s*/.exec(s);
     if (!m) return true;
     if (platform === 'pc') return m[1] === 'PC';
     return m[1] === '폰' || (platform === 'android' && m[1] === '안드로이드');
   };
   // " · " 의 점은 앞 단어에 붙여서, 줄이 "·"로 시작하지 않게 해요
-  const tidy = (s) => s.replace(/^\[(PC|폰|안드로이드)\]\s*/, '').replace(/ · /g, ' · ');
-  return CHANGELOG.map((e) => ({ ...e, items: e.items.filter(ok).map(tidy) })).filter((e) => e.items.length);
+  const tidy = (s) => s.replace(DEV_TAG, '').replace(/^\[(PC|폰|안드로이드)\]\s*/, '').replace(/ · /g, ' · ');
+  return CHANGELOG
+    .filter((e) => dev || !e.dev)
+    .map((e) => {
+      const shown = e.items.filter(ok);
+      const devOnly = !!e.dev || (shown.length > 0 && shown.every((s) => DEV_TAG.test(s)));
+      return { ...e, devOnly, items: shown.map(tidy) };
+    })
+    .filter((e) => e.items.length);
 }
 // 지금 버전과 바로 전 버전의 내역만 (그보다 오래된 건 안 보여줘요)
 function changelogRecent(platform, current) {

@@ -1410,7 +1410,12 @@ function devSlotHTML() {
   if (DEMO || typeof DevMode === 'undefined') return '';
   if (!devHooked) {
     devHooked = true;
-    DevMode.onChange(() => { const s = document.getElementById('mDevSlot'); if (s && state.tab === 'settings') s.innerHTML = DevMode.html('m'); });
+    DevMode.onChange(() => {
+      const s = document.getElementById('mDevSlot');
+      if (s && state.tab === 'settings') s.innerHTML = DevMode.html('m');
+      const c = document.getElementById('mChangelog'); // 개발자 계정이면 "개발자만 업데이트" 버전도 보여요
+      if (c && state.tab === 'settings') c.outerHTML = changelogCardHTML();
+    });
   }
   setTimeout(() => DevMode.load(), 0);
   return `<div id="mDevSlot">${DevMode.html('m')}</div>`;
@@ -1686,13 +1691,15 @@ function showWhatsNew() {
   let last = null;
   try { last = localStorage.getItem('haru:lastVersion'); localStorage.setItem('haru:lastVersion', ver); } catch (_) { return; }
   if (!last || verNum(ver) <= verNum(last)) return;
+  // 이 기기 · 이 계정에 보여줄 게 없는 버전이면 (PC 전용 · 개발자만 업데이트) 알리지 않아요
+  if (CHANGELOG.some((x) => x.v === ver) && !changelogFor(MY_PLATFORM).some((x) => x.v === ver)) return;
   toast(`HaruPlanner ${ver} 으로 업데이트했어요`, { action: '새로운 점', timeout: 8000, onAction: () => { state.tab = 'settings'; render(); setTimeout(() => { const c = $('#mChangelog'); if (c) c.scrollIntoView({ behavior: 'smooth' }); }, 100); } });
 }
 function changelogCardHTML() {
   const ver = (APP_VERSION || '').split('-')[0];
   const list = changelogRecent(MY_PLATFORM, ver);
   return `<div class="m-card m-pad m-clog" id="mChangelog"><b class="m-clog-h">업데이트 내역</b>
-    ${list.map((e, i) => `<details open><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : i === 0 ? '<span class="m-clog-now">최근 변경</span>' : '<span class="m-clog-prev">이전 버전</span>'}<span class="m-muted">${esc(e.date || '')}</span></summary>
+    ${list.map((e, i) => `<details open><summary><b>${esc(e.v)}</b>${e.v === ver ? '<span class="m-clog-now">지금 버전</span>' : i === 0 ? '<span class="m-clog-now">최근 변경</span>' : '<span class="m-clog-prev">이전 버전</span>'}${e.devOnly ? '<span class="m-clog-dev">개발자만 업데이트</span>' : ''}<span class="m-muted">${esc(e.date || '')}</span></summary>
       <ul>${e.items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>`).join('')}</div>`;
 }
 

@@ -435,6 +435,7 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 .m-clog ul { margin: 2px 0 6px 18px; padding: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.65; }
 .m-link { color: var(--accent); text-decoration: underline; font: inherit; padding: 0; background: none; }
 .m-clog-prev { font-size: 12px; color: var(--text-2); background: var(--hover); border-radius: 999px; padding: 2px 8px; }
+.m-clog-dev { font-size: 12px; color: #fff; background: #7d8cff; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 /* 설정 → 캘린더 연동 */
 .m-cal .m-btn { margin-top: 8px; }
 .m-cal .m-set { margin-top: 8px; }
