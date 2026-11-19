@@ -315,6 +315,18 @@ function nativeSystemBars(bg, dark) {
   } catch (_) { barsLast = ''; /* 예전 APK */ }
 }
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
+// 폰 화면 배치가 바뀌면 (버튼 줄 ↔ 제스처, 화면 돌리기, 앱 다시 열기 등) 안드로이드가 버튼 줄 뒤를
+// 시작 화면의 분홍 배경으로 되돌릴 수 있어요 → 그때마다 앱 화면 색을 다시 칠해요
+let barsAgain = 0;
+function repaintSystemBars() {
+  clearTimeout(barsAgain);
+  barsAgain = setTimeout(() => { barsLast = ''; applyTheme(); }, 150);
+}
+window.addEventListener('resize', repaintSystemBars);
+window.addEventListener('orientationchange', repaintSystemBars);
+window.addEventListener('focus', repaintSystemBars);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') repaintSystemBars(); });
+setTimeout(repaintSystemBars, 1500); // 처음 켤 때 한 번 더 (시작 화면이 늦게 사라지는 폰)
 
 // ---------- 토스트 ----------
 function toast(message, { action, onAction, timeout = 3500 } = {}) {
