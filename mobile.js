@@ -1763,9 +1763,11 @@ async function boot() {
   if (!cfg) { $('#app').innerHTML = '<div class="m-loading"><p>클라우드 설정(config.js)이 없어요</p></div>'; return; }
   try { Cloud.connect(cfg.url, cfg.key); } catch (err) { $('#app').innerHTML = `<div class="m-loading"><p>${esc(err.message)}</p></div>`; return; }
   // 메일 링크(가입 인증 · 비밀번호 재설정)로 열렸을 때
-  if (/[?&]code=|error_description=/.test(location.search + location.hash)) {
+  if (/[?&#]code=|error_description=|access_token=/.test(location.search + location.hash)) {
     const r = await Cloud.handleAuthUrl(location.href);
     history.replaceState(null, '', location.pathname);
+    // 메일 인증은 끝났지만 가입한 곳(PC 앱 · 다른 브라우저)이 아니라 바로 로그인은 못 해요
+    if (!r.ok && r.confirmed) { loginScreen({ info: '메일 인증이 끝났어요! 가입한 하루플래너 앱으로 돌아가서 로그인하거나, 여기서 로그인해 주세요.' }); return; }
     if (!r.ok) { loginScreen({ error: r.error }); return; }
     if (r.recovery) { loginScreen({ mode: 'newpw' }); return; }
     toast('메일 인증이 끝났어요');

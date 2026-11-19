@@ -311,10 +311,13 @@ const Cloud = (() => {
     const h = new URLSearchParams((u.hash || '').replace(/^#/, ''));
     const errDesc = q.get('error_description') || h.get('error_description');
     if (errDesc) return { ok: false, error: errDesc.replace(/\+/g, ' ') };
+    // 다른 기기 · 다른 브라우저에서 가입한 메일 링크: 인증은 이미 끝났고, 로그인만 직접 하면 돼요
+    if (h.get('access_token')) return { ok: false, confirmed: true, recovery: h.get('type') === 'recovery' };
     const code = q.get('code');
     if (!code) return { ok: false, error: '링크에 로그인 정보가 없어요' };
     const { data, error } = await client.auth.exchangeCodeForSession(code);
-    if (error) return { ok: false, error: error.message };
+    // 코드가 왔다는 건 Supabase 가 메일 인증을 이미 끝냈다는 뜻이에요. 가입한 곳이 여기가 아니라 바로 로그인은 못 해요
+    if (error) return { ok: false, confirmed: true, error: error.message };
     user = data.user;
     let recovery = data.redirectType === 'recovery';
     try { if (localStorage.getItem(RECOVERY_FLAG) === '1') recovery = true; } catch (_) { /* 무시 */ }
