@@ -340,22 +340,8 @@ const TABS = [
   { k: 'settings', label: '설정', ic: 'settings' },
 ];
 
-// 아이폰 홈 화면 앱: iOS 가 화면 높이를 위쪽 상태 표시줄만큼 짧게 알려 줘서 아래 탭 밑에 빈 띠가 생겨요
-//  → 실제 화면 높이로 늘려요 (키보드가 올라와 짧아진 경우처럼 차이가 크면 건드리지 않아요)
-function fitStandaloneHeight() {
-  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const root = document.documentElement;
-  if (!standalone || !ios) { root.style.removeProperty('--app-h'); return; }
-  const portrait = innerHeight >= innerWidth;
-  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-  const gap = full - innerHeight;
-  if (gap > 0 && gap <= 100) root.style.setProperty('--app-h', `${full}px`);
-  else root.style.removeProperty('--app-h');
-}
-fitStandaloneHeight();
-addEventListener('resize', fitStandaloneHeight);
-addEventListener('orientationchange', () => setTimeout(fitStandaloneHeight, 300));
+// 아이폰 홈 화면 앱 표시 (display-mode 가 안 맞는 iOS 도 있어서 navigator.standalone 도 봐요) → mobile.css 의 .ios-app
+if (navigator.standalone === true) document.documentElement.classList.add('ios-app');
 
 function render() {
   if (!state.data) return;
