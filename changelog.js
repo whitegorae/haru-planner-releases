@@ -6,6 +6,13 @@
  */
 const CHANGELOG = [
   {
+    v: '1.22.1', date: '2026-11-19',
+    items: [
+      '글이 줄을 바꿀 때 단어 가운데서 끊기지 않아요 (띄어쓰기에서만 줄이 바뀌어서 읽기 쉬워졌어요)',
+      '[PC] 설정 화면의 설명 글을 줄였어요',
+    ],
+  },
+  {
     v: '1.22.0', date: '2026-11-19',
     items: [
       '반복으로 만든 할 일을 한꺼번에 고칠 수 있어요: 할 일을 열고 "고칠 범위"에서 "반복 N개 모두"를 고르면 제목 · 목록 · 시간 · 색 · 우선순위 · 알림 · 메모 · 하위 작업이 전부 같이 바뀌어요',
@@ -258,7 +265,9 @@ function changelogFor(platform) {
     if (platform === 'pc') return m[1] === 'PC';
     return m[1] === '폰' || (platform === 'android' && m[1] === '안드로이드');
   };
-  return CHANGELOG.map((e) => ({ ...e, items: e.items.filter(ok).map((s) => s.replace(/^\[(PC|폰|안드로이드)\]\s*/, '')) })).filter((e) => e.items.length);
+  // " · " 의 점은 앞 단어에 붙여서, 줄이 "·"로 시작하지 않게 해요
+  const tidy = (s) => s.replace(/^\[(PC|폰|안드로이드)\]\s*/, '').replace(/ · /g, ' · ');
+  return CHANGELOG.map((e) => ({ ...e, items: e.items.filter(ok).map(tidy) })).filter((e) => e.items.length);
 }
 // 지금 버전과 바로 전 버전의 내역만 (그보다 오래된 건 안 보여줘요)
 function changelogRecent(platform, current) {
