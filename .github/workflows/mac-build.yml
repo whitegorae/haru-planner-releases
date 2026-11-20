@@ -1,0 +1,141 @@
+# HaruPlanner 맥 빌드 (scripts/mac-build.js 가 releases 저장소의 mac-build 브랜치에 올려요)
+#  - 소스는 저장소에 넣지 않고, 비공개 초안(draft) 릴리스의 zip 으로 받아요 (build-request.json 의 sourceAssetId)
+#  - 실제 맥에서 빌드 → 서명 · 설치 · 실행 · 메일 링크 · 화면을 검사하고 결과를 아티팩트로 남겨요
+name: mac-build
+on:
+  push:
+    branches: [mac-build]
+    paths: [build-request.json]
+permissions:
+  contents: write
+concurrency:
+  group: mac-build
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      OUT: ${{ github.workspace }}/out
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mac-build
+      - name: 소스 받기
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$OUT/shots" "$OUT/logs"
+          ASSET=$(jq -r .sourceAssetId build-request.json)
+          curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET" -o src.zip
+          mkdir src && cd src && unzip -q ../src.zip
+          jq -r .version package.json
+          sw_vers
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 설치
+        working-directory: src
+        run: npm ci --no-audit --no-fund
+      - name: 맥 아이콘 (icns)
+        working-directory: src
+        run: |
+          mkdir -p build/icon.iconset
+          for s in 16 32 128 256 512; do
+            sips -z $s $s assets/icon-mac.png --out build/icon.iconset/icon_${s}x${s}.png >/dev/null
+            d=$((s*2)); sips -z $d $d assets/icon-mac.png --out build/icon.iconset/icon_${s}x${s}@2x.png >/dev/null
+          done
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+          ls -la build/icon.icns
+      - name: 빌드 (애플 칩 · 인텔)
+        working-directory: src
+        env:
+          GH_OWNER: whitegorae
+          GH_REPO: haru-planner-releases
+        run: npx electron-builder --mac --config electron-builder.config.js --publish never
+      - name: 서명 · 구성 검사
+        working-directory: src
+        run: |
+          set -e
+          ls -la dist
+          for APP in dist/mac-arm64/HaruPlanner.app dist/mac/HaruPlanner.app; do
+            echo "=== $APP"
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            codesign -dv "$APP" 2>&1 | grep -E 'Identifier|Format|Signature|TeamIdentifier' || true
+            lipo -archs "$APP/Contents/MacOS/HaruPlanner"
+            plutil -p "$APP/Contents/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleShortVersionString|LSMinimumSystemVersion|CFBundleIconFile|haruplanner|CFBundleURLName|CFBundleDevelopmentRegion' || true
+            echo "app.env keys: $(cut -d= -f1 "$APP/Contents/Resources/app.env" | tr '\n' ' ')"
+            test -s "$APP/Contents/Resources/app.env"
+            npx --yes @electron/asar list "$APP/Contents/Resources/app.asar" | grep -E '^/(main|preload|google)\.js$|^/renderer/(index\.html|app\.js|fonts/Dahyun\.ttf)$|^/assets/icon\.png$'
+          done
+          for D in dist/*.dmg; do echo "=== $D"; hdiutil verify "$D"; done
+      - name: dmg 로 설치해 보기 (사용자처럼)
+        working-directory: src
+        run: |
+          set -e
+          D=$(ls dist/HaruPlanner-*-arm64.dmg)
+          hdiutil attach "$D" -nobrowse -mountpoint /tmp/hpdmg
+          ls -la /tmp/hpdmg | tee "$OUT/logs/dmg-contents.txt"
+          cp -R /tmp/hpdmg/HaruPlanner.app /Applications/
+          hdiutil detach /tmp/hpdmg
+          # 인터넷에서 받은 것처럼 격리 표시를 붙여서 게이트키퍼가 어떻게 보는지 기록해요 (인증서가 없어서 거부가 정상)
+          cp -R /Applications/HaruPlanner.app /tmp/HaruPlanner-quarantine.app
+          xattr -w com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" /tmp/HaruPlanner-quarantine.app
+          (spctl --assess --type execute -vv /tmp/HaruPlanner-quarantine.app 2>&1 || true) | tee "$OUT/logs/gatekeeper.txt"
+          (syspolicy_check distribution /tmp/HaruPlanner-quarantine.app 2>&1 || true) | tee -a "$OUT/logs/gatekeeper.txt"
+          codesign --verify --deep --strict /Applications/HaruPlanner.app && echo "installed app signature OK"
+      - name: 화면 캡처 검사 (애플 칩)
+        run: |
+          APP=/Applications/HaruPlanner.app/Contents/MacOS/HaruPlanner
+          export HARU_SCREENSHOT="$OUT/shots/arm64" HARU_VIEWS="today,calendar,calendar-week,dday,timer,settings" \
+                 HARU_NO_CLOUD=1 HARU_USERDATA="$RUNNER_TEMP/ud-arm64" HARU_WIDGETS="calendar,today,timer,dday" \
+                 HARU_TEST_JS="$GITHUB_WORKSPACE/src/scripts/ci/mac-check.js" HARU_EVENT_LOG="$OUT/logs/events-shot-arm64.log"
+          "$APP" > "$OUT/logs/stdout-arm64.txt" 2>&1 &
+          PID=$!
+          for i in $(seq 1 120); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "TIMEOUT"; kill -9 $PID; exit 1; fi
+          wait $PID; echo "exit=$?"
+          cat "$HARU_SCREENSHOT/test-result.json"; echo; cat "$HARU_EVENT_LOG"
+          grep -iE 'error|uncaught' "$HARU_SCREENSHOT/console.log" | head -20 || true
+      - name: 실제 실행 · 메일 링크 · 독 아이콘 · 종료 검사
+        run: |
+          LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+          $LS -f /Applications/HaruPlanner.app
+          EV="$OUT/logs/events-live.log"
+          open -a /Applications/HaruPlanner.app --env HARU_EVENT_LOG="$EV" --env HARU_USERDATA="$RUNNER_TEMP/ud-live"
+          sleep 15
+          screencapture -x "$OUT/shots/live-1-start.png"
+          open 'haruplanner://auth-callback?code=ci-fake-code'
+          sleep 8
+          screencapture -x "$OUT/shots/live-2-mail-link.png"
+          open -a /Applications/HaruPlanner.app
+          sleep 3
+          screencapture -x "$OUT/shots/live-3-activate.png"
+          perl -e 'alarm shift; exec @ARGV' 25 osascript -e 'tell application "HaruPlanner" to quit' || echo "osascript quit failed"
+          for i in $(seq 1 20); do pgrep -x HaruPlanner >/dev/null || break; sleep 1; done
+          if pgrep -x HaruPlanner >/dev/null; then echo "STILL RUNNING"; pkill -9 -x HaruPlanner || true; else echo "quit OK"; fi
+          cat "$EV" || true
+          ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i haru && cp ~/Library/Logs/DiagnosticReports/*Haru* "$OUT/logs/" || echo "no crash reports"
+      - name: 화면 캡처 검사 (인텔, 로제타)
+        continue-on-error: true
+        working-directory: src
+        run: |
+          APP="$PWD/dist/mac/HaruPlanner.app/Contents/MacOS/HaruPlanner"
+          export HARU_SCREENSHOT="$OUT/shots/x64" HARU_VIEWS="today,settings" HARU_NO_CLOUD=1 \
+                 HARU_USERDATA="$RUNNER_TEMP/ud-x64" HARU_TEST_JS="$PWD/scripts/ci/mac-check.js" HARU_EVENT_LOG="$OUT/logs/events-shot-x64.log"
+          "$APP" > "$OUT/logs/stdout-x64.txt" 2>&1 &
+          PID=$!
+          for i in $(seq 1 150); do kill -0 $PID 2>/dev/null || break; sleep 1; done
+          if kill -0 $PID 2>/dev/null; then echo "TIMEOUT"; kill -9 $PID; exit 1; fi
+          wait $PID; echo "exit=$?"
+          cat "$HARU_SCREENSHOT/test-result.json"; echo; cat "$HARU_EVENT_LOG"
+      - name: 결과 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-result
+          retention-days: 5
+          path: |
+            out/**
+            src/dist/*.dmg
