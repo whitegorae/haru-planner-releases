@@ -98,26 +98,47 @@ jobs:
           wait $PID; echo "exit=$?"
           cat "$HARU_SCREENSHOT/test-result.json"; echo; cat "$HARU_EVENT_LOG"
           grep -iE 'error|uncaught' "$HARU_SCREENSHOT/console.log" | head -20 || true
-      - name: 실제 실행 · 메일 링크 · 독 아이콘 · 종료 검사
+      - name: 실제 실행 · 메일 링크 · 창 닫기 · 독 아이콘 · 종료 검사
+        if: always()
         run: |
           LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
           $LS -f /Applications/HaruPlanner.app
+          quit_app() {
+            perl -e 'alarm shift; exec @ARGV' 25 osascript -e 'tell application "HaruPlanner" to quit' || echo "osascript quit failed"
+            for i in $(seq 1 20); do pgrep -x HaruPlanner >/dev/null || break; sleep 1; done
+            if pgrep -x HaruPlanner >/dev/null; then echo "STILL RUNNING → kill"; pkill -9 -x HaruPlanner || true; else echo "quit OK"; fi
+          }
+          launch() { # 사용자가 앱을 누른 것처럼 LaunchServices 로 켜요
+            open -a /Applications/HaruPlanner.app "$@" || { echo "open --env 를 못 써서 직접 실행"; /Applications/HaruPlanner.app/Contents/MacOS/HaruPlanner >/dev/null 2>&1 & }
+          }
+          # 1) 로그인 화면(클라우드 켜짐) → 메일 링크 → ⌘W 로 창 닫기 → 독 아이콘으로 다시 열기 → 종료
           EV="$OUT/logs/events-live.log"
-          open -a /Applications/HaruPlanner.app --env HARU_EVENT_LOG="$EV" --env HARU_USERDATA="$RUNNER_TEMP/ud-live"
+          launch --env HARU_EVENT_LOG="$EV" --env HARU_USERDATA="$RUNNER_TEMP/ud-live"
           sleep 15
           screencapture -x "$OUT/shots/live-1-start.png"
           open 'haruplanner://auth-callback?code=ci-fake-code'
           sleep 8
           screencapture -x "$OUT/shots/live-2-mail-link.png"
-          open -a /Applications/HaruPlanner.app
+          perl -e 'alarm shift; exec @ARGV' 15 osascript -e 'tell application "HaruPlanner" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "w" using command down' || echo "keystroke not permitted"
           sleep 3
-          screencapture -x "$OUT/shots/live-3-activate.png"
-          perl -e 'alarm shift; exec @ARGV' 25 osascript -e 'tell application "HaruPlanner" to quit' || echo "osascript quit failed"
-          for i in $(seq 1 20); do pgrep -x HaruPlanner >/dev/null || break; sleep 1; done
-          if pgrep -x HaruPlanner >/dev/null; then echo "STILL RUNNING"; pkill -9 -x HaruPlanner || true; else echo "quit OK"; fi
-          cat "$EV" || true
+          screencapture -x "$OUT/shots/live-3-after-cmd-w.png"
+          open -a /Applications/HaruPlanner.app
+          sleep 4
+          screencapture -x "$OUT/shots/live-4-dock-reopen.png"
+          quit_app
+          echo "--- events-live"; cat "$EV" || true
+          # 2) 위젯을 열어 둔 상태로 켜기 (지난번에 열어 둔 위젯을 다시 띄워요) → 화면 전체 캡처
+          UDW="$RUNNER_TEMP/ud-widgets"; mkdir -p "$UDW"
+          echo '{"calendar":{"open":true},"today":{"open":true},"timer":{"open":true},"dday":{"open":true}}' > "$UDW/widgets.json"
+          EVW="$OUT/logs/events-widgets.log"
+          launch --env HARU_NO_CLOUD=1 --env HARU_USERDATA="$UDW" --env HARU_EVENT_LOG="$EVW"
+          sleep 15
+          screencapture -x "$OUT/shots/live-5-widgets.png"
+          quit_app
+          echo "--- events-widgets"; cat "$EVW" || true
           ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i haru && cp ~/Library/Logs/DiagnosticReports/*Haru* "$OUT/logs/" || echo "no crash reports"
       - name: 화면 캡처 검사 (인텔, 로제타)
+        if: always()
         continue-on-error: true
         working-directory: src
         run: |
