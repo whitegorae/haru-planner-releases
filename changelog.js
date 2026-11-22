@@ -3,10 +3,20 @@
 /* 업데이트 내역 — 데스크톱 설정 · 폰 앱 설정에 보여줘요.
  * 새 버전을 올릴 때 맨 위에 한 줄씩 추가해 주세요. (짧게, 사용하는 사람 눈높이로)
  * 앞에 [PC] / [폰] / [안드로이드] 를 붙이면 그 기기에만 해당하는 내용이에요.
+ *  [PC] 는 윈도우 · 맥 데스크톱 앱 모두, [윈도우] / [맥] 은 그 운영체제에서만 보여요.
  * dev: true 인 버전(또는 [개발자] 로 시작하는 줄)은 개발자(관리자) 계정에만 보이고 "개발자만 업데이트" 표시가 붙어요.
  *  관리자인지는 서버(admin_usage)가 알려줘요 → 앱에는 관리자 이메일을 적지 않아요.
  */
 const CHANGELOG = [
+  {
+    v: '1.22.8', date: '2026-11-20',
+    items: [
+      '[맥] 맥(Mac)용 하루플래너가 나왔어요 (애플 칩 · 인텔 맥 모두). 윈도우 · 폰과 같은 계정으로 실시간으로 맞춰져요',
+      '[맥] 새 버전이 나오면 알려 드려요: 설정 → 앱 업데이트에서 "새 버전 받기"를 누르면 돼요',
+      '[PC] 화면이 작은 노트북에서도 처음 창이 화면 안에 맞게 열려요',
+      '[안드로이드] 할 일을 쓰는 동안 입력 창이 키보드에 가려지지 않고 화면 위쪽에 보여요',
+    ],
+  },
   {
     v: '1.22.7', date: '2026-11-19',
     items: [
@@ -307,13 +317,14 @@ function changelogFor(platform, dev = changelogIsDev()) {
   const DEV_TAG = /^\[개발자\]\s*/;
   const ok = (s) => {
     if (DEV_TAG.test(s)) { if (!dev) return false; s = s.replace(DEV_TAG, ''); }
-    const m = /^\[(PC|폰|안드로이드)\]\s*/.exec(s);
+    const m = /^\[(PC|맥|윈도우|폰|안드로이드)\]\s*/.exec(s);
     if (!m) return true;
-    if (platform === 'pc') return m[1] === 'PC';
+    if (platform === 'pc') return m[1] === 'PC' || m[1] === '윈도우'; // 윈도우 PC
+    if (platform === 'mac') return m[1] === 'PC' || m[1] === '맥'; // 맥도 데스크톱(PC) 앱이에요
     return m[1] === '폰' || (platform === 'android' && m[1] === '안드로이드');
   };
   // " · " 의 점은 앞 단어에 붙여서, 줄이 "·"로 시작하지 않게 해요
-  const tidy = (s) => s.replace(DEV_TAG, '').replace(/^\[(PC|폰|안드로이드)\]\s*/, '').replace(/ · /g, ' · ');
+  const tidy = (s) => s.replace(DEV_TAG, '').replace(/^\[(PC|맥|윈도우|폰|안드로이드)\]\s*/, '').replace(/ · /g, ' · ');
   return CHANGELOG
     .filter((e) => dev || !e.dev)
     .map((e) => {

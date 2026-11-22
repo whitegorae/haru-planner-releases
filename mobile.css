@@ -269,6 +269,13 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 }
 .m-sheet-wrap.in .m-backdrop { opacity: 1; }
 .m-sheet-wrap.in .m-sheet { transform: translateY(0); }
+/* 안드로이드 앱에서 입력하는 동안: 키보드에 가리지 않게 시트를 화면 위쪽(키보드 위 공간)으로 올려요 */
+.m-sheet-wrap.kb-top .m-sheet {
+  top: calc(var(--safe-t) + 8px); bottom: auto; left: 8px; right: 8px;
+  max-height: calc(46% - var(--safe-t) - 8px);
+  border-radius: 22px; padding-bottom: 14px;
+}
+.m-sheet-wrap.kb-top .m-grab { display: none; }
 .m-grab { width: 44px; height: 5px; border-radius: 3px; background: var(--border); margin: 6px auto 10px; position: relative; }
 .m-grab::after { content: ""; position: absolute; inset: -14px -40px; }
 

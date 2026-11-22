@@ -644,7 +644,7 @@ function closeSheet(opts = {}) {
   const sh = sheets.pop();
   if (!sh) return;
   if (sh.onClose && !opts.silent) sh.onClose(opts);
-  sh.wrap.classList.remove('in');
+  sh.wrap.classList.remove('in', 'kb-top');
   setTimeout(() => sh.wrap.remove(), 260);
 }
 const topSheet = () => sheets[sheets.length - 1];
@@ -1313,6 +1313,35 @@ if (/iP(hone|od|ad)/.test(navigator.userAgent)) {
     const a = document.activeElement;
     if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) window.scrollTo(0, 0);
   }, 80));
+}
+// 안드로이드 앱: 키보드가 올라와도 앱 화면 크기가 줄지 않아서(앱이 키보드 높이를 화면에 알려주지 않아요)
+// 아래에서 올라온 시트(할 일 추가 · 수정 등)가 키보드 밑에 깔려요 → 시트 안 입력 칸을 쓰는 동안은
+// 시트를 화면 위쪽으로 올려서, 적는 글이 바로 보이게 해요. (화면이 실제로 줄어드는 폰이면 원래 자리 그대로)
+if (/HaruPlannerAndroid\//.test(navigator.userAgent)) {
+  const isField = (el) => !!(el && el.matches && el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="date"]):not([type="time"]), textarea, [contenteditable="true"]'));
+  let fullH = window.innerHeight; // 키보드 없을 때 화면 높이
+  let resizes = false; // 이 폰에서 키보드가 올라오면 화면이 줄어드는지 (한 번 확인되면 위로 올리지 않아요)
+  let offTimer = 0;
+  window.addEventListener('resize', () => {
+    if (!isField(document.activeElement)) fullH = Math.max(fullH, window.innerHeight);
+    else if (window.innerHeight < fullH - 120) { resizes = true; $$('.m-sheet-wrap.kb-top').forEach((w) => w.classList.remove('kb-top')); }
+  });
+  document.addEventListener('focusin', (e) => {
+    const t = e.target;
+    const wrap = isField(t) && t.closest('.m-sheet-wrap');
+    if (!wrap) return;
+    clearTimeout(offTimer);
+    if (!resizes) wrap.classList.add('kb-top');
+    setTimeout(() => { if (document.activeElement === t) t.scrollIntoView({ block: 'nearest' }); }, 320);
+  });
+  document.addEventListener('focusout', () => {
+    clearTimeout(offTimer);
+    offTimer = setTimeout(() => { // 다른 입력 칸으로 옮겨 가는 중이면 그대로 둬요
+      const a = document.activeElement;
+      if (isField(a) && a.closest('.m-sheet-wrap')) return;
+      $$('.m-sheet-wrap.kb-top').forEach((w) => w.classList.remove('kb-top'));
+    }, 180);
+  });
 }
 window.addEventListener('pagehide', () => { if (Cloud.isActive()) Cloud.flushNow(1500); });
 
