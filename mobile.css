@@ -92,7 +92,7 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 /* 아이콘만 (글자 없이) · 홈 막대 위쪽 칸 가운데에 */
 .m-tabs button { display: flex; align-items: center; justify-content: center; color: var(--text-3); }
 .m-tabs button .ic { width: calc(27 * var(--u)); height: calc(27 * var(--u)); }
-.m-tab-ic { display: grid; place-items: center; width: calc(56 * var(--u)); height: calc(38 * var(--u)); border-radius: 999px; transition: background .2s; }
+.m-tab-ic { display: grid; place-items: center; width: calc(56 * var(--u)); max-width: calc(100% - 4px); height: calc(38 * var(--u)); border-radius: 999px; transition: background .2s; } /* 탭이 7개라 좁은 폰에서는 칸에 맞춰 줄어요 */
 .m-tabs button.on { color: var(--accent); }
 .m-tabs button.on .m-tab-ic { background: var(--accent-soft); }
 .m-fab {
@@ -311,6 +311,63 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 .m-dd-t { font-size: 17px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-dd-s { font-family: var(--font-sub); font-size: 13px; color: var(--text-3); }
 .m-ddays .m-empty { grid-column: 1 / -1; }
+
+/* ===================== 포스트잇 (PC 포스트잇과 같은 색 · 같은 데이터) ===================== */
+/* 색: 밝은 테마는 포스트잇 색 그대로, 어두운 테마는 색을 살짝 물들인 어두운 카드, "선명"은 늘 진한 색 그대로 (PC widget.css 와 같아요) */
+.mn-card, .m-sheet.mn-sheet {
+  --nb: var(--nc, #fff3a3);
+  --nt: #4b3f4c; --nt2: rgba(75, 63, 76, .62); --nt3: rgba(75, 63, 76, .42); --nh: rgba(75, 63, 76, .08);
+}
+[data-theme="dark"] .mn-card, [data-theme="dark"] .m-sheet.mn-sheet {
+  --nb: color-mix(in srgb, var(--nc, #fff3a3) 24%, var(--panel));
+  --nt: #f4ecf3; --nt2: rgba(244, 236, 243, .66); --nt3: rgba(244, 236, 243, .42); --nh: rgba(255, 255, 255, .08);
+}
+.mn-card.vivid, [data-theme="dark"] .mn-card.vivid, .m-sheet.mn-sheet.vivid, [data-theme="dark"] .m-sheet.mn-sheet.vivid {
+  --nb: var(--nc);
+  --nt: #3b3026; --nt2: rgba(59, 48, 38, .66); --nt3: rgba(59, 48, 38, .46); --nh: rgba(59, 48, 38, .1);
+}
+.mn-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(12 * var(--u)); align-items: start; }
+.mn-card {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: calc(132 * var(--u)); padding: 15px 15px 12px; border-radius: 22px;
+  background: var(--nb); color: var(--nt); text-align: left; box-shadow: var(--shadow-soft); transition: transform .12s;
+}
+.mn-card:active { transform: scale(.97); }
+.mn-text {
+  flex: 1; min-height: 0; font-size: calc(16 * var(--u)); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 7; overflow: hidden;
+}
+.mn-text i { font-style: normal; font-family: var(--font-sub); color: var(--nt3); }
+.mn-when { font-family: var(--font-sub); font-size: 13px; color: var(--nt3); }
+
+/* 한 장 열기: 포스트잇 색 시트 · 글자 칸이 남는 자리를 다 써요 */
+.m-sheet.mn-sheet {
+  height: calc(100% - var(--safe-t) - 70px); display: flex; flex-direction: column; overflow: hidden;
+  background: var(--nb); color: var(--nt); padding-bottom: calc(var(--safe-b) + 10px); transition: transform .28s cubic-bezier(.2, .9, .3, 1), background-color .2s;
+}
+.m-sheet.mn-sheet .m-grab { background: var(--nt3); opacity: .5; flex-shrink: 0; }
+/* 안드로이드 앱에서 적는 동안: 키보드 위 공간에 맞춰요 (위쪽 .kb-top 과 같이) */
+.m-sheet-wrap.kb-top .m-sheet.mn-sheet { height: calc(46% - var(--safe-t) - 8px); max-height: none; }
+.mn-ed { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mn-ed-top { display: flex; align-items: center; gap: 4px; margin: 0 -6px 2px; flex-shrink: 0; }
+.mn-ib { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; color: var(--nt2); flex-shrink: 0; }
+.mn-ib .ic { width: 22px; height: 22px; }
+.mn-ib.on, .mn-ib:active { background: var(--nh); color: var(--nt); }
+.mn-ed-when { font-family: var(--font-sub); font-size: 14px; color: var(--nt3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mn-pal-wrap { flex-shrink: 0; }
+.mn-pal { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 12px; }
+.mn-pal-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.mn-pal-row > span { width: 44px; flex-shrink: 0; font-family: var(--font-sub); font-size: 14px; color: var(--nt2); }
+.mn-c { width: 32px; height: 32px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1); }
+.mn-c.on { box-shadow: 0 0 0 2px var(--nb), 0 0 0 4px var(--accent); }
+.mn-fs { height: 36px; min-width: 48px; padding: 0 10px; border-radius: 12px; background: var(--nh); color: var(--nt); font-size: 14px; }
+.mn-fs.big { font-size: 18px; }
+.mn-fs:disabled { opacity: .35; }
+.mn-pal-row b { min-width: 28px; text-align: center; font-weight: normal; font-family: var(--font-sub); font-size: 15px; }
+.mn-ta {
+  flex: 1; min-height: 0; width: 100%; border: 0; resize: none; background: transparent; color: var(--nt);
+  padding: 6px 2px 12px; font-family: var(--font-main); line-height: 1.6; overscroll-behavior: contain;
+}
+.mn-ta::placeholder { color: var(--nt3); }
 
 /* ===================== 설정 ===================== */
 .m-acc { display: flex; align-items: center; gap: 12px; }

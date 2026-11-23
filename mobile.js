@@ -60,6 +60,7 @@ const ICONS = {
   share: '<path d="M12 15V3.5M7.5 8L12 3.5 16.5 8"/><path d="M6 11.5H5a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 5 20.5h14a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 19 11.5h-1"/>',
   cloud: '<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.5 1.6A3.8 3.8 0 0 1 17.5 18.5Z"/>',
   work: '<rect x="3.5" y="7.5" width="17" height="12.5" rx="3.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 12.5h17M12 11.5v2"/>',
+  sticky: '<path d="M20.5 14.5V6.5a3 3 0 0 0-3-3h-11a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h8Z"/><path d="M14.5 20.5v-3a3 3 0 0 1 3-3h3"/><path d="M8 9h8M8 12.5h4.5"/>',
 };
 function icon(name, cls = '') {
   let b = ICONS[name] || '';
@@ -96,7 +97,7 @@ function defaultData() {
   return {
     version: 3,
     lists: [{ id: 'inbox', name: '수신함', color: '#8f9cff', system: true }, { id: uid(), name: '개인', color: '#8fd694' }, { id: uid(), name: '업무', color: '#ff9b73' }],
-    tasks: [], ddays: [], sessions: [], photos: [], jobs: [], shifts: [], activeTimer: null, settings: baseSettings(),
+    tasks: [], ddays: [], sessions: [], photos: [], notes: [], jobs: [], shifts: [], activeTimer: null, settings: baseSettings(),
   };
 }
 function normalize(data) {
@@ -109,6 +110,7 @@ function normalize(data) {
   data.ddays = Array.isArray(data.ddays) ? data.ddays : [];
   data.sessions = Array.isArray(data.sessions) ? data.sessions : [];
   data.photos = Array.isArray(data.photos) ? data.photos : [];
+  data.notes = Array.isArray(data.notes) ? data.notes : []; // 포스트잇 (PC 와 같이 써요)
   data.jobs = Array.isArray(data.jobs) ? data.jobs : []; // 근무지
   data.shifts = Array.isArray(data.shifts) ? data.shifts : []; // 근무
   data.activeTimer = data.activeTimer || null;
@@ -353,6 +355,7 @@ const TABS = [
   { k: 'lists', label: '목록', ic: 'lists' },
   { k: 'dday', label: '디데이', ic: 'dday' },
   { k: 'work', label: '근무', ic: 'work' },
+  { k: 'notes', label: '포스트잇', ic: 'sticky' },
   { k: 'settings', label: '설정', ic: 'settings' },
 ];
 
@@ -373,7 +376,7 @@ function render() {
   const view = $('#view');
   const keep = view.dataset.tab === state.tab + (state.listView || '') ? view.scrollTop : 0;
   view.dataset.tab = state.tab + (state.listView || '');
-  view.innerHTML = ({ today: viewToday, calendar: viewCalendar, lists: viewLists, dday: viewDday, work: MWork.view, settings: viewSettings })[state.tab]();
+  view.innerHTML = ({ today: viewToday, calendar: viewCalendar, lists: viewLists, dday: viewDday, work: MWork.view, notes: MNotes.view, settings: viewSettings })[state.tab]();
   view.scrollTop = keep;
   Photos.hydrate(view);
 }
@@ -911,6 +914,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'fab':
       if (state.tab === 'work') MWork.add();
+      else if (state.tab === 'notes') MNotes.add();
       else if (state.tab === 'dday') openDdaySheet(null);
       else if (state.tab === 'calendar') openTaskSheet('add', { date: state.calSel });
       else if (state.tab === 'lists' && state.listView && state.listView.startsWith('list:')) openTaskSheet('add', { listId: state.listView.slice(5) });
@@ -1269,6 +1273,7 @@ function onRemote() {
   saveCacheSoon();
   bkLiveSoon(); // 다른 기기에서 바꾼 것도 드라이브로
   if (taskSheet && taskSheet.mode === 'edit' && !taskById(taskSheet.id)) { closeSheet({ silent: true }); taskSheet = null; toast('다른 기기에서 이 할 일을 지웠어요'); }
+  MNotes.remote(); // 열어 둔 포스트잇에도 PC 에서 고친 내용을 바로 넣어요
 }
 async function startCloud() {
   loading();
@@ -1362,6 +1367,12 @@ function demoData() {
     makeTask({ title: '여행 준비', dueDate: addDays(t, 3), endDate: addDays(t, 5), listId: personal.id, color: '#7fb8ff' }),
     makeTask({ title: '장보기', dueDate: t, done: true, doneAt: Date.now() }),
     makeTask({ title: '책 읽기', listId: personal.id }),
+  ];
+  const ago = (min) => Date.now() - min * 60000;
+  d.notes = [
+    { id: uid(), text: '장 볼 것\n- 우유\n- 계란\n- 두부', color: '#fff3a3', createdAt: ago(300), updatedAt: ago(20) },
+    { id: uid(), text: '이번 주 목표: 매일 30분 걷기', color: '#ffb340', tone: 'vivid', createdAt: ago(3000), updatedAt: ago(1500) },
+    { id: uid(), text: '와이파이 비밀번호는 공유기 뒤에 있어요', color: '#d6e8ff', createdAt: ago(9000), updatedAt: ago(8000) },
   ];
   d.ddays = [{ id: uid(), title: 'JLPT N3', date: addDays(t, 21), color: null, pinned: true }, { id: uid(), title: '크리스마스', date: `${t.slice(0, 4)}-12-25` < t ? `${Number(t.slice(0, 4)) + 1}-12-25` : `${t.slice(0, 4)}-12-25`, color: '#ff6b81', pinned: false }];
   return d;
