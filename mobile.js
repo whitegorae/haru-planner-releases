@@ -59,6 +59,7 @@ const ICONS = {
   nodate: '<rect x="3.5" y="5" width="17" height="15.5" rx="4"/><path d="M8 3v3.5M16 3v3.5M9 11.5l6 6M15 11.5l-6 6"/>',
   share: '<path d="M12 15V3.5M7.5 8L12 3.5 16.5 8"/><path d="M6 11.5H5a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 5 20.5h14a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 19 11.5h-1"/>',
   cloud: '<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.5 1.6A3.8 3.8 0 0 1 17.5 18.5Z"/>',
+  work: '<rect x="3.5" y="7.5" width="17" height="12.5" rx="3.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 12.5h17M12 11.5v2"/>',
 };
 function icon(name, cls = '') {
   let b = ICONS[name] || '';
@@ -95,7 +96,7 @@ function defaultData() {
   return {
     version: 3,
     lists: [{ id: 'inbox', name: '수신함', color: '#8f9cff', system: true }, { id: uid(), name: '개인', color: '#8fd694' }, { id: uid(), name: '업무', color: '#ff9b73' }],
-    tasks: [], ddays: [], sessions: [], photos: [], activeTimer: null, settings: baseSettings(),
+    tasks: [], ddays: [], sessions: [], photos: [], jobs: [], shifts: [], activeTimer: null, settings: baseSettings(),
   };
 }
 function normalize(data) {
@@ -108,6 +109,8 @@ function normalize(data) {
   data.ddays = Array.isArray(data.ddays) ? data.ddays : [];
   data.sessions = Array.isArray(data.sessions) ? data.sessions : [];
   data.photos = Array.isArray(data.photos) ? data.photos : [];
+  data.jobs = Array.isArray(data.jobs) ? data.jobs : []; // 근무지
+  data.shifts = Array.isArray(data.shifts) ? data.shifts : []; // 근무
   data.activeTimer = data.activeTimer || null;
   data.settings = { ...baseSettings(), ...(data.settings || {}) };
   return data;
@@ -207,7 +210,7 @@ const canEdit = () => {
   return true;
 };
 function withUndo(message, fn) {
-  const snap = JSON.stringify({ tasks: state.data.tasks, ddays: state.data.ddays, lists: state.data.lists });
+  const snap = JSON.stringify({ tasks: state.data.tasks, ddays: state.data.ddays, lists: state.data.lists, jobs: state.data.jobs, shifts: state.data.shifts });
   fn();
   commit();
   toast(message, { action: '되돌리기', onAction: () => { Object.assign(state.data, JSON.parse(snap)); commit(); } });
@@ -349,6 +352,7 @@ const TABS = [
   { k: 'calendar', label: '캘린더', ic: 'calendar' },
   { k: 'lists', label: '목록', ic: 'lists' },
   { k: 'dday', label: '디데이', ic: 'dday' },
+  { k: 'work', label: '근무', ic: 'work' },
   { k: 'settings', label: '설정', ic: 'settings' },
 ];
 
@@ -369,7 +373,7 @@ function render() {
   const view = $('#view');
   const keep = view.dataset.tab === state.tab + (state.listView || '') ? view.scrollTop : 0;
   view.dataset.tab = state.tab + (state.listView || '');
-  view.innerHTML = ({ today: viewToday, calendar: viewCalendar, lists: viewLists, dday: viewDday, settings: viewSettings })[state.tab]();
+  view.innerHTML = ({ today: viewToday, calendar: viewCalendar, lists: viewLists, dday: viewDday, work: MWork.view, settings: viewSettings })[state.tab]();
   view.scrollTop = keep;
   Photos.hydrate(view);
 }
@@ -906,7 +910,8 @@ document.addEventListener('click', (e) => {
       render();
       break;
     case 'fab':
-      if (state.tab === 'dday') openDdaySheet(null);
+      if (state.tab === 'work') MWork.add();
+      else if (state.tab === 'dday') openDdaySheet(null);
       else if (state.tab === 'calendar') openTaskSheet('add', { date: state.calSel });
       else if (state.tab === 'lists' && state.listView && state.listView.startsWith('list:')) openTaskSheet('add', { listId: state.listView.slice(5) });
       else if (state.tab === 'lists' && state.listView === 'next7') openTaskSheet('add', { date: todayStr() });
@@ -1535,7 +1540,7 @@ function calCardsHTML() {
 }
 // ---------- 백업 · 원본 사진 카드 (하루플래너 비밀번호로 암호화: 이 기기에 파일로 · 구글 드라이브 숨김 폴더로) ----------
 const bk = { drive: null, files: null, busy: '', error: '', waiting: false, loaded: false, keyAsked: false };
-const BK_KIND_NAMES = { tasks: '할 일', lists: '목록', ddays: '디데이', notes: '포스트잇', photos: '사진', sessions: '타이머 기록' };
+const BK_KIND_NAMES = { tasks: '할 일', lists: '목록', ddays: '디데이', notes: '포스트잇', photos: '사진', sessions: '타이머 기록', jobs: '근무지', shifts: '근무' };
 const bkSummary = (c) => Object.entries(BK_KIND_NAMES).filter(([k]) => c[k]).map(([k, n]) => `${n} ${c[k]}개`).join(' · ') || '새로 넣을 항목 없음';
 const bkCanSave = !ANDROID_APP; // 안드로이드 앱(웹뷰)은 파일 내려받기를 못 해요 → 드라이브로
 function bkRefresh() { const p = document.getElementById('mBackup'); if (p && state.tab === 'settings') p.outerHTML = backupCardHTML(); }

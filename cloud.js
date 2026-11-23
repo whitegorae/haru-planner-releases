@@ -23,7 +23,7 @@ const Cloud = (() => {
   const EVENTS = 'events';
   const META = 'planner_meta';
   const DEVICE_SETTINGS = ['zoom', 'sidebarCollapsed', 'closeToTray', 'openAtLogin', 'gcalSync', 'gcalCalendarId', 'gcalListId']; // 구글 연결은 PC 마다 따로
-  const META_KINDS = { list: 'lists', dday: 'ddays', session: 'sessions', photo: 'photos', note: 'notes' }; // note: 포스트잇 // photo: 사진 일기 (파일은 Storage, 목록은 여기)
+  const META_KINDS = { list: 'lists', dday: 'ddays', session: 'sessions', photo: 'photos', note: 'notes', job: 'jobs', shift: 'shifts' }; // note: 포스트잇 // photo: 사진 일기 (파일은 Storage, 목록은 여기) // job · shift: 근무지 · 근무 (1.23.0)
 
   // 이 앱이 아는 데이터 종류. 예전 앱이 나중에 생긴 종류(사진 · 포스트잇 등)를 "지운 것"으로 착각해 서버에서 지우던 문제를 막아요
   const knownKind = (r) => r && (r.kind === 'task' || (r.kind === 'meta' && (r.id === 'settings' || r.id === 'timer')) || Object.prototype.hasOwnProperty.call(META_KINDS, r.kind));
@@ -191,7 +191,7 @@ const Cloud = (() => {
     if (prop) data[prop] = data[prop].filter((x) => x.id !== id);
   }
   function buildData(rows, base) {
-    const data = { version: 3, lists: [], tasks: [], ddays: [], sessions: [], photos: [], notes: [], activeTimer: null, settings: { ...base.settings } };
+    const data = { version: 3, lists: [], tasks: [], ddays: [], sessions: [], photos: [], notes: [], jobs: [], shifts: [], activeTimer: null, settings: { ...base.settings } };
     for (const r of rows) applyRowTo(data, r.kind, r.id, strip(r.data));
     Object.assign(data.settings, deviceSettings());
     return data;

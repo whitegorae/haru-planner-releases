@@ -23,7 +23,7 @@
 const HaruBackup = (() => {
   const MAGIC = 'HaruPlanner-backup';
   const ITER = 310000;
-  const KINDS = ['lists', 'tasks', 'ddays', 'sessions', 'notes', 'photos'];
+  const KINDS = ['lists', 'tasks', 'ddays', 'sessions', 'notes', 'photos', 'jobs', 'shifts'];
   const LIVE_NAME = 'HaruPlanner-live.haru';
   const NEED_KEY = '하루플래너 비밀번호를 한 번 넣어 주세요 (설정 → 백업)';
   const enc = new TextEncoder();
