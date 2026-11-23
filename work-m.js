@@ -128,29 +128,138 @@ const MWork = (() => {
       <h3>${draft.isNew ? '근무 추가' : '근무 고치기'}</h3>
       ${draft.isNew && allPresets().length ? `<div class="mw-pre-row in-sheet"><span class="mw-pre-l">자주 쓰는 시간 · 누르면 바로 넣어요</span><div class="mw-pre-chips">${allPresets().map((p) => preChip(p, 'pre-add')).join('')}</div></div>` : ''}
       <label class="m-dp-row">${icon('lists')}<span>근무지</span><span class="flex1"></span><select id="mwJob">${jobs().map((o) => `<option value="${esc(o.id)}" ${o.id === x.jobId ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
-      <label class="m-dp-row">${icon('calendar')}<span>날짜</span><span class="flex1"></span><input type="date" id="mwDate" value="${esc(x.date)}"></label>
-      <label class="m-dp-row">${icon('clock')}<span>시작</span><span class="flex1"></span><input type="time" id="mwStart" value="${esc(x.start)}"></label>
-      <label class="m-dp-row">${icon('clock')}<span>끝</span><span class="flex1"></span><input type="time" id="mwEnd" value="${esc(x.end)}"></label>
+      <button class="m-dp-row mw-when-row" data-mw="when">${icon('calendar')}<span>날짜 · 시간</span><span class="flex1"></span><span class="mw-when">${esc(whenText(x, draft.isNew))}</span>${icon('chevR')}</button>
       <label class="m-dp-row">${icon('sun')}<span>쉬는 시간 (분)</span><span class="flex1"></span><input type="number" id="mwBreak" inputmode="numeric" min="0" step="10" value="${Number(x.breakMin) || 0}"></label>
       <div class="mw-pv-row"><div class="mw-preview" id="mwPreview">${pv}</div><button class="mw-pre-save" data-mw="pre-save">${icon('plus')}자주 쓰는 시간으로 저장</button></div>
       <input id="mwMemo" class="m-input" placeholder="메모 (예: 마감조)" value="${esc(x.memo || '')}" autocomplete="off" enterkeyhint="done">
-      ${draft.isNew ? `<label class="m-dp-row">${icon('repeat')}<span>반복</span><span class="flex1"></span><select id="mwRepeat">
-        <option value="0">안 함</option><option value="month">이 달 매주</option><option value="4">4주 동안 매주</option><option value="8">8주 동안 매주</option><option value="13">3달 동안 매주</option></select></label>` : ''}
       <div class="m-dp-foot">${draft.isNew ? '<button class="m-btn" data-mw="cancel">취소</button>' : `<button class="m-btn danger" data-mw="shift-del">${icon('trash')}삭제</button>`}<button class="m-btn primary" data-mw="shift-save">${draft.isNew ? '추가' : '저장'}</button></div>
     </div>`;
   }
   function readShift() {
+    const w = (draft && draft.v) || {};
     return {
-      jobId: $('#mwJob').value, date: $('#mwDate').value, start: $('#mwStart').value, end: $('#mwEnd').value,
+      jobId: $('#mwJob').value, date: w.date, start: w.start, end: w.end,
       breakMin: Math.max(0, Math.round(Number($('#mwBreak').value) || 0)), memo: $('#mwMemo').value.trim(),
     };
+  }
+
+  // ---------- 날짜 · 시간 고르기 시트 (PC 의 "날짜 / 지속 시간" 창과 같은 구성) ----------
+  const REPEAT_OPTS = [{ v: '0', label: '안 함' }, { v: 'month', label: '이 달 끝날 때까지 매주' }, { v: '4', label: '4주 동안 매주' }, { v: '8', label: '8주 동안 매주' }, { v: '13', label: '3달 동안 매주' }];
+  const durMin = (x) => { const d = (hm(x.end) - hm(x.start) + 1440) % 1440; return d || 1440; };
+  const durText = (m) => (m < 60 ? `${m}분` : `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ''}`);
+  const nextDay = (x) => hm(x.end) <= hm(x.start);
+  const rangeLabel = (x) => `${timeLabel(x.start)} – ${nextDay(x) ? '다음 날 ' : ''}${timeLabel(x.end)}`;
+  const repeatLabel = (r) => (REPEAT_OPTS.find((o) => o.v === String(r || '0')) || REPEAT_OPTS[0]).label;
+  function whenText(x, withRepeat) {
+    const d = parseYmd(x.date);
+    return `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAYS[d.getDay()]}) ${rangeLabel(x)}${withRepeat && x.repeat && x.repeat !== '0' ? ` · ${repeatLabel(x.repeat)}` : ''}`;
+  }
+  let tp = null; // { v, tab, open, month, opts }
+  function setStart(x, v) { const d = durMin(x); x.start = v; x.end = hmStr((hm(v) + d) % 1440); }
+  function tpTimes(k, cur, after = null) {
+    const items = [];
+    const from = after === null ? 0 : after + 15;
+    const to = after === null ? 1440 : after + 1440;
+    for (let m = from; m < to; m += 15) {
+      const v = hmStr(m % 1440);
+      const extra = after === null ? '' : ` <small>(${durText(m - after)}${m >= 1440 ? ' · 다음 날' : ''})</small>`;
+      items.push(`<button class="mw-time ${cur === v ? 'on' : ''}" data-mw="tp-set" data-k="${k}" data-v="${v}">${timeLabel(v)}${extra}</button>`);
+    }
+    if (cur && !items.some((s) => s.includes(`data-v="${cur}"`))) items.push(`<button class="mw-time on" data-mw="tp-set" data-k="${k}" data-v="${cur}">${timeLabel(cur)}</button>`);
+    return `<div class="mw-times">${items.join('')}</div>`;
+  }
+  function tpCal() {
+    const x = tp.v;
+    const t = todayStr();
+    const [y, m] = tp.month.split('-').map(Number);
+    const ws = S().weekStart || 0;
+    const lead = (new Date(y, m - 1, 1).getDay() - ws + 7) % 7;
+    const start = addDays(`${tp.month}-01`, -lead);
+    const heads = Array.from({ length: 7 }, (_, i) => { const wd = (ws + i) % 7; return `<span class="${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}">${WEEKDAYS[wd]}</span>`; }).join('');
+    let cells = '';
+    for (let i = 0; i < 42; i++) {
+      const d = addDays(start, i);
+      cells += `<button class="m-dp-d${d.slice(0, 7) !== tp.month ? ' out' : ''}${d === t ? ' today' : ''}${d === x.date ? ' on' : ''}${holidayOf(d) || parseYmd(d).getDay() === 0 ? ' sun' : ''}" data-mw="tp-pick" data-d="${d}">${parseYmd(d).getDate()}</button>`;
+    }
+    return `<div class="m-dp-mh"><b>${y}년 ${m}월</b><span class="flex1"></span><button data-mw="tp-month" data-dir="-1">${icon('chevL')}</button><button data-mw="tp-month" data-dir="0" class="m-pill sm">오늘</button><button data-mw="tp-month" data-dir="1">${icon('chevR')}</button></div>
+      <div class="m-dp-wd">${heads}</div><div class="m-dp-grid">${cells}</div>`;
+  }
+  function tpHTML() {
+    const x = tp.v;
+    const o = tp.opts;
+    const row = (k, ic, label, value, body) => `<button class="m-dp-row mw-tp-row ${tp.open === k ? 'open' : ''}" data-mw="tp-open" data-k="${k}">${icon(ic)}<span>${label}</span><span class="flex1"></span><span class="mw-when">${esc(value)}</span>${icon(tp.open === k ? 'chevD' : 'chevR')}</button>${tp.open === k ? body() : ''}`;
+    const box = (k, text) => `<button class="mw-box ${tp.open === k ? 'on' : ''}" data-mw="tp-open" data-k="${k}">${esc(text)}</button>`;
+    const dur = (withDate) => `<div class="mw-dur">
+        <div class="mw-dur-row"><span>시작</span>${withDate ? box('sd', `${Number(x.date.slice(5, 7))}월 ${Number(x.date.slice(8))}일`) : ''}${box('st', timeLabel(x.start))}</div>
+        ${tp.open === 'sd' ? tpCal() : tp.open === 'st' ? tpTimes('start', x.start) : ''}
+        <div class="mw-dur-row"><span>끝</span>${box('et', `${nextDay(x) ? '다음 날 ' : ''}${timeLabel(x.end)}`)}</div>
+        ${tp.open === 'et' ? tpTimes('end', x.end, hm(x.start)) : ''}
+        <div class="mw-dur-row"><span>근무</span><b>${durText(durMin(x))}${nextDay(x) ? ' · 자정을 넘겨요' : ''}</b></div>
+      </div>`;
+    const tail = `${o.withRepeat ? `<div class="m-dp-rows">${row('repeat', 'repeat', '반복', x.repeat && x.repeat !== '0' ? repeatLabel(x.repeat) : '', () => `<div class="mw-times">${REPEAT_OPTS.map((r) => `<button class="mw-time ${String(x.repeat || '0') === r.v ? 'on' : ''}" data-mw="tp-set" data-k="repeat" data-v="${r.v}">${r.label}</button>`).join('')}</div>`)}</div>` : ''}
+      <div class="m-dp-foot"><button class="m-btn" data-mw="tp-cancel">취소</button><button class="m-btn primary" data-mw="tp-ok">확인</button></div>`;
+    if (!o.withDate) return `<div class="m-dp mw-tp">${dur(false)}${tail}</div>`;
+    const tabs = `<div class="m-dp-mode"><button class="${tp.tab === 'date' ? 'on' : ''}" data-mw="tp-tab" data-v="date">날짜</button><button class="${tp.tab === 'dur' ? 'on' : ''}" data-mw="tp-tab" data-v="dur">지속 시간</button></div>`;
+    if (tp.tab === 'dur') return `<div class="m-dp mw-tp">${tabs}${dur(true)}${tail}</div>`;
+    const quick = [['today', 'sun', '오늘'], ['tomorrow', 'sunrise', '내일'], ['week', 'plus7', '다음 주'], ['tonight', 'moon', '오늘 밤']];
+    return `<div class="m-dp mw-tp">${tabs}
+      <div class="m-dp-quick">${quick.map(([k, ic, l]) => `<button data-mw="tp-quick" data-k="${k}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>
+      ${tpCal()}
+      <div class="m-dp-rows">${row('st', 'clock', '시간', rangeLabel(x), () => tpTimes('start', x.start))}</div>
+      ${tail}</div>`;
+  }
+  function tpRender() {
+    const sh = topSheet();
+    if (!sh || !sh.el.classList.contains('mwtp')) return;
+    rerenderSheet(sh, tpHTML());
+    const box = sh.el.querySelector('.mw-times');
+    const on = box && box.querySelector('.on');
+    if (box && on) box.scrollTop = on.offsetTop - box.clientHeight / 2 + on.offsetHeight / 2;
+  }
+  function openTimePicker(v, opts) {
+    tp = { v: { repeat: '0', ...v }, tab: 'date', open: opts.withDate ? null : 'st', month: (v.date || todayStr()).slice(0, 7), opts };
+    openSheet(tpHTML(), { cls: 'mwtp' });
+    tpRender();
+  }
+  function tpAction(a, el) {
+    if (!tp) return;
+    const x = tp.v;
+    const k = el.dataset.k;
+    switch (a) {
+      case 'tp-tab': tp.tab = el.dataset.v; tp.open = null; break;
+      case 'tp-quick': {
+        const t = todayStr();
+        x.date = k === 'tomorrow' ? addDays(t, 1) : k === 'week' ? addDays(t, 7) : t;
+        if (k === 'tonight') setStart(x, '20:00');
+        tp.month = x.date.slice(0, 7);
+        break;
+      }
+      case 'tp-month': {
+        const dir = Number(el.dataset.dir);
+        if (dir === 0) tp.month = todayStr().slice(0, 7);
+        else { const d = parseYmd(`${tp.month}-01`); d.setMonth(d.getMonth() + dir); tp.month = ymd(d).slice(0, 7); }
+        break;
+      }
+      case 'tp-pick': x.date = el.dataset.d; if (x.date.slice(0, 7) !== tp.month) tp.month = x.date.slice(0, 7); if (tp.open === 'sd') tp.open = null; break;
+      case 'tp-open': tp.open = tp.open === k ? null : k; if (k === 'sd') tp.month = x.date.slice(0, 7); break;
+      case 'tp-set':
+        if (k === 'start') setStart(x, el.dataset.v);
+        else if (k === 'end') x.end = el.dataset.v;
+        else if (k === 'repeat') x.repeat = el.dataset.v;
+        tp.open = null;
+        break;
+      case 'tp-cancel': tp = null; closeSheet({ silent: true }); return;
+      case 'tp-ok': { const fn = tp.opts.onDone; const v = { ...x }; tp = null; closeSheet({ silent: true }); if (fn) setTimeout(() => fn(v), 0); return; }
+      default: return;
+    }
+    tpRender();
   }
   function openShift(shift, date) {
     if (!canEdit()) return;
     if (!jobs().length) { openJob(null, () => openShift(null, date)); return; }
     const jobId = shift ? shift.jobId : (lastJob && jobById(lastJob) ? lastJob : jobs()[0].id);
     const lt = lastTimes[jobId] || {};
-    const v = shift ? { ...shift } : { id: uid(), jobId, date: date || sel, start: lt.start || '09:00', end: lt.end || '18:00', breakMin: lt.breakMin ?? 60, memo: '' };
+    const v = shift ? { ...shift, repeat: '0' } : { id: uid(), jobId, date: date || sel, start: lt.start || '09:00', end: lt.end || '18:00', breakMin: lt.breakMin ?? 60, memo: '', repeat: '0' };
     draft = { kind: 'shift', isNew: !shift, v };
     openSheet(shiftHTML(), { cls: 'mwsheet' });
   }
@@ -165,15 +274,7 @@ const MWork = (() => {
     lastTimes[v.jobId] = { start: v.start, end: v.end, breakMin: v.breakMin };
     lastJob = v.jobId;
     if (draft.isNew) {
-      const repeat = $('#mwRepeat').value;
-      const dates = [v.date];
-      if (repeat !== '0') {
-        const until = repeat === 'month' ? `${v.date.slice(0, 7)}-31` : addDays(v.date, Number(repeat) * 7 - 1);
-        for (let d = addDays(v.date, 7); d <= until; d = addDays(d, 7)) {
-          if (repeat === 'month' && d.slice(0, 7) !== v.date.slice(0, 7)) break;
-          dates.push(d);
-        }
-      }
+      const dates = repeatDates(v.date, draft.v.repeat || '0');
       for (const d of dates) state.data.shifts.push({ ...v, id: d === v.date ? draft.v.id : uid(), date: d });
       sel = v.date;
       closeSheet({ silent: true });
@@ -244,7 +345,24 @@ const MWork = (() => {
     const el = e.target.closest('[data-mw]');
     if (!el || !state.data) return;
     const a = el.dataset.mw;
+    if (a.startsWith('tp-')) { tpAction(a, el); return; }
     switch (a) {
+      // 근무 시트의 "날짜 · 시간" → 고르기 시트
+      case 'when': {
+        if (!draft || draft.kind !== 'shift') break;
+        Object.assign(draft.v, readShift()); // 근무지 · 쉬는 시간 · 메모 적은 것 기억
+        openTimePicker({ date: draft.v.date, start: draft.v.start, end: draft.v.end, repeat: draft.v.repeat }, {
+          withDate: true,
+          withRepeat: draft.isNew,
+          onDone: (v) => {
+            if (!draft || draft.kind !== 'shift') return;
+            Object.assign(draft.v, { date: v.date, start: v.start, end: v.end, repeat: v.repeat });
+            const sh = topSheet();
+            if (sh && sh.el.classList.contains('mwsheet')) rerenderSheet(sh, shiftHTML());
+          },
+        });
+        break;
+      }
       case 'month': moveMonth(Number(el.dataset.n)); render(); break;
       case 'month-today': month = todayStr().slice(0, 7); sel = todayStr(); render(); break;
       case 'day':
@@ -269,8 +387,8 @@ const MWork = (() => {
       case 'pre-add': {
         const p = presetByKey(el.dataset.k);
         if (!p) break;
-        const date = /^\d{4}-\d{2}-\d{2}$/.test(($('#mwDate') || {}).value || '') ? $('#mwDate').value : sel;
-        const repeat = $('#mwRepeat') ? $('#mwRepeat').value : '0';
+        const date = draft && draft.v && /^\d{4}-\d{2}-\d{2}$/.test(draft.v.date || '') ? draft.v.date : sel;
+        const repeat = draft && draft.v ? draft.v.repeat || '0' : '0';
         closeSheet({ silent: true });
         draft = null;
         sel = date;
@@ -338,7 +456,11 @@ const MWork = (() => {
   document.addEventListener('change', (e) => {
     if (e.target.id !== 'mwJob' || !draft || !draft.isNew) return;
     const lt = lastTimes[e.target.value];
-    if (lt) { $('#mwStart').value = lt.start; $('#mwEnd').value = lt.end; $('#mwBreak').value = lt.breakMin; }
+    if (lt && draft.v) {
+      Object.assign(draft.v, readShift(), { start: lt.start, end: lt.end, breakMin: lt.breakMin, jobId: e.target.value });
+      rerenderSheet(topSheet(), shiftHTML());
+      return;
+    }
     e.target.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
