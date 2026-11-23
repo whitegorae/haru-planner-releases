@@ -65,7 +65,7 @@ const DevMode = (() => {
   function mergePeople(sb, dr) {
     if (!sb && !dr) return null;
     const byId = new Map();
-    for (const u of sb || []) byId.set(u.id, { id: u.id, email: u.email || '', created: u.created_at, last: u.last_sign_in_at, sbBytes: Number(u.storage_bytes) || 0, sbFiles: Number(u.storage_files) || 0, events: Number(u.events) || 0, meta: Number(u.meta) || 0, drive: null });
+    for (const u of sb || []) byId.set(u.id, { id: u.id, email: u.email || '', created: u.created_at, last: u.last_sign_in_at, sbBytes: Number(u.storage_bytes) || 0, sbFiles: Number(u.storage_files) || 0, events: Number(u.events) || 0, meta: Number(u.meta) || 0, calAt: u.cal_at || null, workAt: u.work_at || null, dataAt: u.data_at || null, drive: null });
     for (const x of dr || []) {
       const p = byId.get(x.user_id) || { id: x.user_id, email: '', sbBytes: 0, sbFiles: 0, events: 0, meta: 0 };
       p.drive = x;
@@ -82,6 +82,15 @@ const DevMode = (() => {
     const allDrive = pp.list.reduce((s, p) => s + (p.drive && !p.drive.error ? Number(p.drive.bytes) || 0 : 0), 0);
     const allSb = pp.list.reduce((s, p) => s + p.sbBytes, 0);
     const ymdOf = (iso) => { if (!iso) return '-'; const t = new Date(iso); return `${t.getFullYear()}.${t.getMonth() + 1}.${t.getDate()}`; };
+    // 마지막 수정: 날짜 + 시각 (+ 얼마 전)
+    const whenOf = (iso) => {
+      if (!iso) return '기록 없음';
+      const t = new Date(iso);
+      const p2 = (n) => String(n).padStart(2, '0');
+      const min = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000));
+      const ago = min < 1 ? '방금' : min < 60 ? `${min}분 전` : min < 1440 ? `${Math.floor(min / 60)}시간 전` : `${Math.floor(min / 1440)}일 전`;
+      return `${t.getFullYear()}.${t.getMonth() + 1}.${t.getDate()} ${p2(t.getHours())}:${p2(t.getMinutes())} (${ago})`;
+    };
     const share = (b) => (allDrive > 0 ? pctText(b / allDrive) : '0%');
     const line = (label, x) => (x && x.n ? `<span>${label}</span><b>${num(x.n)}개 · ${size(Number(x.bytes) || 0)}</b>` : '');
     const one = (p) => {
@@ -99,6 +108,9 @@ const DevMode = (() => {
       return `<div class="dev-user">
         <div class="dev-user-h"><b>${e(p.email || '(이메일 없음)')}</b><span>가입 ${ymdOf(p.created)} · 최근 로그인 ${ymdOf(p.last)}</span></div>
         <div class="dev-grid">
+          ${pp.hasSb ? `<span>캘린더(일정 · 할 일) 마지막 수정</span><b>${whenOf(p.calAt)}</b>
+          <span>근무표 마지막 수정</span><b>${whenOf(p.workAt)}</b>
+          <span>그 밖의 데이터 마지막 수정</span><b>${whenOf(p.dataAt)}</b>` : ''}
           ${driveRows}
           ${pp.hasSb ? `<span>Supabase 사진 저장소</span><b>${num(p.sbFiles)}개 · ${size(p.sbBytes)}</b>
           <span>할 일 · 일정 / 목록 · 설정</span><b>${num(p.events)}줄 / ${num(p.meta)}줄</b>` : ''}
