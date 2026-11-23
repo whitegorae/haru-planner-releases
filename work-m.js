@@ -129,8 +129,10 @@ const MWork = (() => {
       ${draft.isNew && allPresets().length ? `<div class="mw-pre-row in-sheet"><span class="mw-pre-l">자주 쓰는 시간 · 누르면 바로 넣어요</span><div class="mw-pre-chips">${allPresets().map((p) => preChip(p, 'pre-add')).join('')}</div></div>` : ''}
       <label class="m-dp-row">${icon('lists')}<span>근무지</span><span class="flex1"></span><select id="mwJob">${jobs().map((o) => `<option value="${esc(o.id)}" ${o.id === x.jobId ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
       <button class="m-dp-row mw-when-row" data-mw="when" data-open="">${icon('calendar')}<span>날짜${draft.isNew ? ' · 반복' : ''}</span><span class="flex1"></span><span class="mw-when">${esc(dateText(x, draft.isNew))}</span>${icon('chevR')}</button>
-      <button class="m-dp-row mw-when-row" data-mw="when" data-open="st">${icon('clock')}<span>출근</span><span class="flex1"></span><span class="mw-when">${esc(timeLabel(x.start))}</span>${icon('chevR')}</button>
-      <button class="m-dp-row mw-when-row" data-mw="when" data-open="et">${icon('clock')}<span>퇴근</span><span class="flex1"></span><span class="mw-when">${esc(endLabel(x))}</span>${icon('chevR')}</button>
+      <button class="m-dp-row mw-when-row ${draft.open === 'st' ? 'open' : ''}" data-mw="sh-open" data-k="st">${icon('clock')}<span>출근</span><span class="flex1"></span><span class="mw-when">${esc(timeLabel(x.start))}</span>${icon(draft.open === 'st' ? 'chevD' : 'chevR')}</button>
+      ${draft.open === 'st' ? tpTimes('start', x.start, null, 'sh') : ''}
+      <button class="m-dp-row mw-when-row ${draft.open === 'et' ? 'open' : ''}" data-mw="sh-open" data-k="et">${icon('clock')}<span>퇴근</span><span class="flex1"></span><span class="mw-when">${esc(endLabel(x))}</span>${icon(draft.open === 'et' ? 'chevD' : 'chevR')}</button>
+      ${draft.open === 'et' ? tpTimes('end', x.end, hm(x.start), 'sh') : ''}
       <label class="m-dp-row">${icon('sun')}<span>쉬는 시간 (분)</span><span class="flex1"></span><input type="number" id="mwBreak" inputmode="numeric" min="0" step="10" value="${Number(x.breakMin) || 0}"></label>
       <div class="mw-pv-row"><div class="mw-preview" id="mwPreview">${pv}</div><button class="mw-pre-save" data-mw="pre-save">${icon('plus')}자주 쓰는 시간으로 저장</button></div>
       <input id="mwMemo" class="m-input" placeholder="메모 (예: 마감조)" value="${esc(x.memo || '')}" autocomplete="off" enterkeyhint="done">
@@ -176,7 +178,8 @@ const MWork = (() => {
     return hmStr(h * 60 + m);
   }
   let tp = null; // { v, tab, open, month, opts }
-  function tpTimes(k, cur, after = null) {
+  // p: 'tp' (고르기 시트 안) | 'sh' (근무 시트 안에서 바로 펼침 — 누르면 바로 들어가요)
+  function tpTimes(k, cur, after = null, p = 'tp') {
     const from = after === null ? 0 : after + 15;
     const to = after === null ? 1440 : after + 1440;
     const mins = [];
@@ -189,9 +192,9 @@ const MWork = (() => {
     const items = mins.map((m) => {
       const v = hmStr(m % 1440);
       const extra = after === null ? '' : ` <small>(${durText(m - after)}${m >= 1440 ? ' · 다음 날' : ''})</small>`;
-      return `<button class="mw-time ${cur === v ? 'on' : ''}" data-mw="tp-set" data-k="${k}" data-v="${v}">${timeLabel(v)}${extra}</button>`;
+      return `<button class="mw-time ${cur === v ? 'on' : ''}" data-mw="${p}-set" data-k="${k}" data-v="${v}">${timeLabel(v)}${extra}</button>`;
     });
-    return `<div class="mw-tin"><input class="m-input" data-mw-tin="${k}" placeholder="직접 입력 (예: ${k === 'end' ? '17:20' : '9:10'})" autocomplete="off" inputmode="numeric" enterkeyhint="done"><button class="m-btn" data-mw="tp-tin" data-k="${k}">적용</button></div>
+    return `<div class="mw-tin"><input class="m-input" data-mw-tin="${k}" data-mw-tp="${p}" placeholder="직접 입력 (예: ${k === 'end' ? '17:20' : '9:10'})" autocomplete="off" inputmode="numeric" enterkeyhint="done"><button class="m-btn" data-mw="${p}-tin" data-k="${k}">적용</button></div>
       <div class="mw-times">${items.join('')}</div>`;
   }
   function tpCal() {
@@ -296,11 +299,39 @@ const MWork = (() => {
     }
     tpRender();
   }
+  // 근무 시트의 출근 · 퇴근 줄: 누르면 바로 아래로 시간 목록이 펼쳐지고, 고르면 바로 들어가요 (따로 뜨는 창 없음)
+  function shRerender(center) {
+    const sh = topSheet();
+    if (!sh || !sh.el.classList.contains('mwsheet')) return;
+    rerenderSheet(sh, shiftHTML());
+    if (!center) return;
+    const box = sh.el.querySelector('.mw-times');
+    const on = box && box.querySelector('.on');
+    if (box && on) box.scrollTop = on.offsetTop - box.clientHeight / 2 + on.offsetHeight / 2;
+  }
+  function shAction(a, el) {
+    if (!draft || draft.kind !== 'shift') return;
+    Object.assign(draft.v, readShift()); // 근무지 · 쉬는 시간 · 메모 적은 것 기억
+    const k = el.dataset.k;
+    if (a === 'sh-open') { draft.open = draft.open === k ? null : k; shRerender(true); return; }
+    let v = null;
+    if (a === 'sh-set') v = el.dataset.v;
+    else if (a === 'sh-tin') {
+      const inp = document.querySelector(`.mw-sheet [data-mw-tin="${k}"]`);
+      v = parseTime(inp && inp.value);
+      if (!v) { toast('시각을 "17:20"처럼 적어 주세요'); if (inp) inp.focus(); return; }
+      if (inp) inp.blur();
+    } else return;
+    if (k === 'start') draft.v.start = v; else draft.v.end = v;
+    draft.open = null;
+    shRerender(false);
+  }
   // 시간 "직접 입력"에서 완료(Enter) = 적용
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing || !e.target.dataset || !e.target.dataset.mwTin) return;
     e.preventDefault();
-    tpAction('tp-tin', { dataset: { k: e.target.dataset.mwTin } });
+    if (e.target.dataset.mwTp === 'sh') shAction('sh-tin', { dataset: { k: e.target.dataset.mwTin } });
+    else tpAction('tp-tin', { dataset: { k: e.target.dataset.mwTin } });
   });
   function openShift(shift, date) {
     if (!canEdit()) return;
@@ -394,6 +425,7 @@ const MWork = (() => {
     if (!el || !state.data) return;
     const a = el.dataset.mw;
     if (a.startsWith('tp-')) { tpAction(a, el); return; }
+    if (a.startsWith('sh-')) { shAction(a, el); return; }
     switch (a) {
       // 근무 시트의 "날짜 · 시간" → 고르기 시트
       case 'when': {
