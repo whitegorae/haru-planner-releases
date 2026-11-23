@@ -22,6 +22,43 @@ const MWork = (() => {
   const moveMonth = (n) => { const d = parseYmd(`${month}-01`); d.setMonth(d.getMonth() + n); month = ymd(d).slice(0, 7); sel = month === todayStr().slice(0, 7) ? todayStr() : `${month}-01`; };
   const jobTags = (j) => [`시급 ${money(j.wage)}`, j.weekly ? '주휴' : '', j.fivePlus ? '5인 이상' : '', j.deduct === 'tax33' ? '3.3%' : j.deduct === 'ins' ? '4대보험' : ''].filter(Boolean).join(' · ');
 
+  // ---------- 자주 쓰는 시간 (근무지마다 job.presets · PC 와 같이 써요) ----------
+  const presetsOf = (j) => (j && Array.isArray(j.presets) ? j.presets : []);
+  const allPresets = () => jobs().flatMap((j) => presetsOf(j).map((p) => ({ ...p, job: j, key: `${j.id}:${p.id}` })));
+  const presetByKey = (k) => allPresets().find((p) => p.key === k) || null;
+  const rangeText = (p) => `${timeText(p.start)}~${timeText(p.end)}`;
+  const preChip = (p, a) => `<button class="mw-pre" data-mw="${a}" data-k="${esc(p.key)}" style="--c:${esc(p.job.color)}"><b>${esc(p.name)}</b>${p.name !== rangeText(p) ? `<span>${rangeText(p)}</span>` : ''}${jobs().length > 1 ? `<small>${esc(p.job.name)}</small>` : ''}</button>`;
+  function repeatDates(date, repeat) {
+    const dates = [date];
+    if (!repeat || repeat === '0') return dates;
+    const until = repeat === 'month' ? `${date.slice(0, 7)}-31` : addDays(date, Number(repeat) * 7 - 1);
+    for (let d = addDays(date, 7); d <= until; d = addDays(d, 7)) {
+      if (repeat === 'month' && d.slice(0, 7) !== date.slice(0, 7)) break;
+      dates.push(d);
+    }
+    return dates;
+  }
+  function addFromPreset(p, dates) {
+    if (!canEdit()) return;
+    const memo = p.name && p.name !== rangeText(p) ? p.name : '';
+    const md = (d) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8))}일`;
+    withUndo(dates.length > 1 ? `"${p.name}" 근무 ${dates.length}개를 넣었어요` : `${md(dates[0])}에 "${p.name}" 근무를 넣었어요`, () => {
+      for (const d of dates) state.data.shifts.push({ id: uid(), jobId: p.job.id, date: d, start: p.start, end: p.end, breakMin: Number(p.breakMin) || 0, memo });
+    });
+    lastJob = p.job.id;
+    lastTimes[p.job.id] = { start: p.start, end: p.end, breakMin: Number(p.breakMin) || 0 };
+  }
+  function savePreset(jobId, v, name) {
+    const j = jobById(jobId);
+    if (!j) return false;
+    const list = presetsOf(j);
+    if (list.some((p) => p.start === v.start && p.end === v.end && (Number(p.breakMin) || 0) === (Number(v.breakMin) || 0))) { toast('같은 시간이 이미 저장돼 있어요'); return false; }
+    j.presets = [...list, { id: uid(), name: String(name || '').trim() || rangeText(v), start: v.start, end: v.end, breakMin: Number(v.breakMin) || 0 }];
+    commit();
+    toast(`"${j.presets[j.presets.length - 1].name}"을(를) 자주 쓰는 시간에 저장했어요`);
+    return true;
+  }
+
   function view() {
     const [y, m] = month.split('-').map(Number);
     const ws = Number(S().weekStart) || 0;
@@ -70,6 +107,7 @@ const MWork = (() => {
       <div class="m-cal mw-cal"><div class="m-cal-wd">${heads}</div><div class="m-cal-grid">${cells}</div></div>
       <div class="m-day">
         <div class="m-day-h"><b>${sd.getMonth() + 1}월 ${sd.getDate()}일 (${WEEKDAYS[sd.getDay()]})</b></div>
+        ${allPresets().length ? `<div class="mw-pre-row"><span class="mw-pre-l">자주 쓰는 시간 · 누르면 이 날에 바로 넣어요</span><div class="mw-pre-chips">${allPresets().map((p) => preChip(p, 'pre-quick')).join('')}</div></div>` : ''}
         ${selList.map((x) => { const j = jobById(x.jobId); const sp = WorkPay.span(x); return `<button class="mw-shift" data-mw="edit" data-id="${esc(x.id)}" style="--c:${esc(j.color)}">
           <span class="mw-sh-t">${timeText(x.start)} ~ ${timeText(x.end)}${sp && sp.end > 1440 ? ' <small>(다음 날)</small>' : ''}</span>
           <span class="mw-sh-m">${esc(j.name)} · ${sp ? hours(sp.paid) : ''}${x.breakMin ? ` (쉬는 시간 ${x.breakMin}분)` : ''}${x.memo ? ` · ${esc(x.memo)}` : ''}</span></button>`; }).join('') || '<p class="m-day-empty">이 날 근무가 없어요</p>'}
@@ -88,12 +126,13 @@ const MWork = (() => {
     const pv = j && sp && sp.paid > 0 ? `${sp.end > 1440 ? '다음 날까지 · ' : ''}<b>${hours(sp.paid)}</b> 근무 · 기본급 약 <b>${money(Math.round((sp.paid / 60) * (Number(j.wage) || 0)))}</b>` : '';
     return `<div class="mw-sheet">
       <h3>${draft.isNew ? '근무 추가' : '근무 고치기'}</h3>
+      ${draft.isNew && allPresets().length ? `<div class="mw-pre-row in-sheet"><span class="mw-pre-l">자주 쓰는 시간 · 누르면 바로 넣어요</span><div class="mw-pre-chips">${allPresets().map((p) => preChip(p, 'pre-add')).join('')}</div></div>` : ''}
       <label class="m-dp-row">${icon('lists')}<span>근무지</span><span class="flex1"></span><select id="mwJob">${jobs().map((o) => `<option value="${esc(o.id)}" ${o.id === x.jobId ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
       <label class="m-dp-row">${icon('calendar')}<span>날짜</span><span class="flex1"></span><input type="date" id="mwDate" value="${esc(x.date)}"></label>
       <label class="m-dp-row">${icon('clock')}<span>시작</span><span class="flex1"></span><input type="time" id="mwStart" value="${esc(x.start)}"></label>
       <label class="m-dp-row">${icon('clock')}<span>끝</span><span class="flex1"></span><input type="time" id="mwEnd" value="${esc(x.end)}"></label>
       <label class="m-dp-row">${icon('sun')}<span>쉬는 시간 (분)</span><span class="flex1"></span><input type="number" id="mwBreak" inputmode="numeric" min="0" step="10" value="${Number(x.breakMin) || 0}"></label>
-      <div class="mw-preview" id="mwPreview">${pv}</div>
+      <div class="mw-pv-row"><div class="mw-preview" id="mwPreview">${pv}</div><button class="mw-pre-save" data-mw="pre-save">${icon('plus')}자주 쓰는 시간으로 저장</button></div>
       <input id="mwMemo" class="m-input" placeholder="메모 (예: 마감조)" value="${esc(x.memo || '')}" autocomplete="off" enterkeyhint="done">
       ${draft.isNew ? `<label class="m-dp-row">${icon('repeat')}<span>반복</span><span class="flex1"></span><select id="mwRepeat">
         <option value="0">안 함</option><option value="month">이 달 매주</option><option value="4">4주 동안 매주</option><option value="8">8주 동안 매주</option><option value="13">3달 동안 매주</option></select></label>` : ''}
@@ -164,6 +203,7 @@ const MWork = (() => {
       <label class="mw-check"><input type="checkbox" id="mwjFive" ${j.fivePlus ? 'checked' : ''}><span>5인 이상 사업장<small>밤 10시~아침 6시, 하루 8시간 · 주 40시간이 넘는 시간은 50% 더 받아요</small></span></label>
       <div class="mw-ded"><span>월급에서 떼는 돈</span><div class="m-seg">${[['none', '없음'], ['tax33', '3.3%'], ['ins', '4대보험']].map(([v, l]) => `<button class="${j.deduct === v ? 'on' : ''}" data-mw="job-deduct" data-v="${v}">${l}</button>`).join('')}</div></div>
       ${j.deduct === 'ins' ? `<div class="mw-ins">${ins('pension', '국민연금 4.75%')}${ins('health', '건강보험 3.595% (+ 장기요양)')}${ins('employ', '고용보험 0.9%')}</div>` : ''}
+      ${draft.isNew ? '' : `<div class="mw-pre-edit"><span>자주 쓰는 시간</span>${presetsOf(jobById(j.id)).map((p) => `<div class="mw-pre-item"><b>${esc(p.name)}</b><span>${rangeText(p)}${p.breakMin ? ` · 쉬는 시간 ${p.breakMin}분` : ''}</span><button class="m-icbtn danger" data-mw="pre-del" data-id="${esc(p.id)}" aria-label="지우기">${icon('trash')}</button></div>`).join('') || '<p class="mw-hint">근무를 추가할 때 "자주 쓰는 시간으로 저장"을 누르면 여기에 생겨요</p>'}</div>`}
       <div class="m-dp-foot">${draft.isNew ? '<button class="m-btn" data-mw="cancel">취소</button>' : `<button class="m-btn danger" data-mw="job-del">${icon('trash')}삭제</button>`}<button class="m-btn primary" data-mw="job-save">${draft.isNew ? '추가' : '저장'}</button></div>
     </div>`;
   }
@@ -222,6 +262,44 @@ const MWork = (() => {
         closeSheet({ silent: true });
         draft = null;
         withUndo('근무를 지웠어요', () => { state.data.shifts = state.data.shifts.filter((s) => s.id !== id); });
+        break;
+      }
+      // 자주 쓰는 시간
+      case 'pre-quick': { const p = presetByKey(el.dataset.k); if (p) addFromPreset(p, [sel]); break; }
+      case 'pre-add': {
+        const p = presetByKey(el.dataset.k);
+        if (!p) break;
+        const date = /^\d{4}-\d{2}-\d{2}$/.test(($('#mwDate') || {}).value || '') ? $('#mwDate').value : sel;
+        const repeat = $('#mwRepeat') ? $('#mwRepeat').value : '0';
+        closeSheet({ silent: true });
+        draft = null;
+        sel = date;
+        addFromPreset(p, repeatDates(date, repeat));
+        break;
+      }
+      case 'pre-save': {
+        if (!draft || draft.kind !== 'shift') break;
+        const v = readShift();
+        const sp = WorkPay.span(v);
+        if (!jobById(v.jobId) || !sp || sp.raw === 1440 || sp.paid <= 0) { toast('시작 · 끝 시간을 확인해 주세요'); break; }
+        Object.assign(draft.v, v);
+        const def = v.memo || rangeText(v);
+        askPrompt('자주 쓰는 시간 이름 (예: 오픈, 마감)', def, { okText: '저장' }).then((name) => {
+          if (name === null) return;
+          if (savePreset(v.jobId, v, name || def) && draft && draft.kind === 'shift' && topSheet()) rerenderSheet(topSheet(), shiftHTML());
+        });
+        break;
+      }
+      case 'pre-del': {
+        if (!draft || draft.kind !== 'job') break;
+        const j = jobById(draft.v.id);
+        if (!j) break;
+        keepJob();
+        const p = presetsOf(j).find((x) => x.id === el.dataset.id);
+        j.presets = presetsOf(j).filter((x) => x.id !== el.dataset.id);
+        commit();
+        rerenderSheet(topSheet(), jobHTML());
+        toast(`"${p ? p.name : ''}"을(를) 자주 쓰는 시간에서 뺐어요`);
         break;
       }
       case 'job-add': openJob(null); break;

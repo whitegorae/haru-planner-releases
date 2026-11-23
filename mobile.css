@@ -244,6 +244,26 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 .mw-check small { font-family: var(--font-sub); font-size: 12.5px; color: var(--text-3); }
 .mw-ded { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0 6px; border-top: 1px dashed var(--border); margin-top: 4px; font-size: 16px; }
 .mw-ins { padding: 4px 12px; border-radius: 14px; background: var(--hover); }
+/* 자주 쓰는 시간 */
+.mw-pre-row { display: flex; flex-direction: column; gap: 6px; padding: 2px 4px 4px; }
+.mw-pre-row.in-sheet { padding: 0 0 8px; margin-bottom: 4px; border-bottom: 1px dashed var(--border); }
+.mw-pre-l { font-family: var(--font-sub); font-size: 13px; color: var(--text-3); }
+.mw-pre-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mw-pre {
+  --c: var(--accent);
+  display: inline-flex; align-items: baseline; gap: 5px; height: 36px; padding: 0 14px; border-radius: 999px; line-height: 36px; white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 20%, var(--panel)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 45%, transparent); color: var(--text); font-size: 15px;
+}
+.mw-pre:active { background: color-mix(in srgb, var(--c) 38%, var(--panel)); }
+.mw-pre b { font-weight: normal; }
+.mw-pre span, .mw-pre small { font-family: var(--font-sub); font-size: 12.5px; color: var(--text-2); }
+.mw-pv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.mw-pre-save { display: inline-flex; align-items: center; gap: 3px; margin-top: 6px; font-size: 13.5px; color: var(--accent); }
+.mw-pre-save .ic { width: 15px; height: 15px; }
+.mw-pre-edit { display: flex; flex-direction: column; gap: 4px; padding: 10px 0 4px; margin-top: 6px; border-top: 1px dashed var(--border); font-size: 16px; }
+.mw-pre-item { display: flex; align-items: center; gap: 8px; padding: 2px 0 2px 12px; border-radius: 12px; background: var(--hover); }
+.mw-pre-item b { font-weight: normal; font-size: 15px; }
+.mw-pre-item span { flex: 1; font-family: var(--font-sub); font-size: 13px; color: var(--text-3); }
 .mw-ins .mw-check { font-size: 15px; }
 
 /* ===================== 목록 ===================== */
