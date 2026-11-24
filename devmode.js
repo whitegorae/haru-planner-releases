@@ -104,6 +104,7 @@ const DevMode = (() => {
             ${line('원본 사진', k.orig)}
             ${line('백업 (실시간 · 날짜별)', k.backups)}
             ${line('사진 백업 사본', k.photoCopies)}
+            ${line('일정 첨부파일', k.attach)}
             ${line('기타', k.other)}`;
       return `<div class="dev-user">
         <div class="dev-user-h"><b>${e(p.email || '(이메일 없음)')}</b><span>가입 ${ymdOf(p.created)} · 최근 로그인 ${ymdOf(p.last)}</span></div>
@@ -147,6 +148,7 @@ const DevMode = (() => {
         ${line('원본 사진', k.orig)}
         ${line('백업 (실시간 · 날짜별)', k.backups)}
         ${line('사진 백업 사본', k.photoCopies)}
+        ${line('일정 첨부파일', k.attach)}
         ${line('기타', k.other)}
         ${dr.email ? `<span>연결한 계정</span><b>${e(dr.email)}</b>` : ''}
       </div>

@@ -645,3 +645,30 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 .m-dc-count { margin: 8px 0 2px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 14px; color: var(--text); line-height: 1.5; }
 .m-dc-count b { color: var(--accent); font-weight: normal; }
 .m-dc-count span { font-size: 12.5px; color: var(--text-2); }
+
+/* 일정 첨부파일 */
+.m-att { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
+.m-att-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 2px 4px 4px; border-radius: 12px; }
+.m-att-row:active { background: var(--hover); }
+.m-att .att-ic {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: .02em; color: #fff; background: #a3a0b3; font-family: var(--font-sub);
+}
+.m-att .att-ic.k-img { background: #5fb98c; }
+.m-att .att-ic.k-pdf { background: #f0646e; }
+.m-att .att-ic.k-video { background: #8f7cf0; }
+.m-att .att-ic.k-audio { background: #e58bd0; }
+.m-att .att-ic.k-zip { background: #c9a25a; }
+.m-att .att-ic.k-sheet { background: #3fa86b; }
+.m-att .att-ic.k-slide { background: #f08a4b; }
+.m-att .att-ic.k-doc { background: #5b8def; }
+.m-att-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 3px; text-align: left; background: none; border: 0; padding: 0; color: var(--text); }
+.m-att-name { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-att-main small, .m-att-pct { font-size: 12px; color: var(--text-3); font-family: var(--font-sub); font-variant-numeric: tabular-nums; }
+.m-att-pct { flex: none; min-width: 34px; text-align: right; }
+.m-att-err { color: var(--danger) !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-att-bar { display: block; height: 5px; border-radius: 99px; background: var(--hover); overflow: hidden; }
+.m-att-bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .25s; }
+.m-icbtn.sm { width: 34px; height: 34px; flex: none; }
+.m-icbtn.sm .ic { width: 18px; height: 18px; }
+.m-att-add { align-self: flex-start; }

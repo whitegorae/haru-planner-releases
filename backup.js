@@ -310,6 +310,13 @@ const HaruBackup = (() => {
   const driveDownload = (id) => drive('download', { id }).then((r) => r.content);
   const driveDelete = (id) => drive('delete', { id });
   const driveDisconnect = () => drive('disconnect').then((r) => { setDriveOn(false); return r; });
+  // 일정 첨부파일: 드라이브와 바로 주고받을 짧은 열쇠 (앱 전용 숨김 폴더만 쓸 수 있어요) — attach.js
+  const driveFileToken = (quota) => drive('file-token', { quota: !!quota })
+    .then((r) => { setDriveOn(true); return r; })
+    .catch((e) => {
+      const m = e.message || '';
+      throw new Error(/알 수 없는 동작/.test(m) ? '서버 준비가 아직 안 됐어요 (deploy-gcal)' : /연결되지 않았|연결이 풀렸/.test(m) ? '파일을 넣으려면 설정 › 백업에서 구글 드라이브를 연결해 주세요' : m);
+    });
   // 구글 동의 화면 열기 (캘린더 연동과 같은 방식, purpose=drive)
   async function driveConnect(openUrl) {
     const c = cli();
@@ -615,7 +622,7 @@ const HaruBackup = (() => {
   return {
     snapshot, lock, unlock, peek, merge, counts, fileName, saveFile, pickFile,
     keyReady, keyExists, keyUnlock, keyOnLogin, keyOnPasswordChange, forgetKey,
-    driveStatus, driveOn, driveList, driveUsage, driveAdminUsage, driveUpload, drivePut, driveDownload, driveDelete, driveDisconnect, driveConnect,
+    driveStatus, driveOn, driveList, driveUsage, driveAdminUsage, driveUpload, drivePut, driveDownload, driveDelete, driveDisconnect, driveConnect, driveFileToken,
     lockPhoto, unlockPhoto, photoName, restorePhotoFiles, isLive, isDaily, isPhotoFile, isOrigFile, LIVE_NAME,
     photoToDrive, drivePhotoPut, drivePhotoDelete, photoOriginalUrl, origCached, clearOriginals, photoMoveSetup, photoMoveTick, photoStats,
     autoCfg, setAuto, autoTick, liveSoon, liveRun, liveOnce, liveState, onLive, liveFiles, setLiveFiles, backupFiles, photoCount, KINDS,

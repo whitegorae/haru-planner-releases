@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <!-- viewport-fit=cover: 아이폰 노치·다이내믹 아일랜드 영역까지 꽉 채우고, 안쪽 여백은 safe-area 로 맞춰요 -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self'; manifest-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.googleapis.com; worker-src 'self'; manifest-src 'self'">
   <title>HaruPlanner</title>
   <meta name="description" content="하루 일정 · 캘린더 · 디데이 (데스크톱 HaruPlanner 와 실시간 동기화)">
   <meta name="theme-color" content="#fff9f4" media="(prefers-color-scheme: light)">
@@ -17,25 +17,26 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="mobile.css?v=mwsyki7f">
+  <link rel="stylesheet" href="mobile.css?v=mwurqtwd">
 </head>
 <body>
   <div id="app" class="m-app"></div>
   <div id="sheetRoot"></div>
   <div id="toasts" class="m-toasts"></div>
-  <script src="config.js?v=mwsyki7f"></script>
-  <script src="vendor/supabase.js?v=mwsyki7f"></script>
-  <script src="shared.js?v=mwsyki7f"></script>
-  <script src="cloud.js?v=mwsyki7f"></script>
-  <script src="photos.js?v=mwsyki7f"></script>
-  <script src="changelog.js?v=mwsyki7f"></script>
-  <script src="calsync.js?v=mwsyki7f"></script>
-  <script src="devmode.js?v=mwsyki7f"></script>
-  <script src="backup.js?v=mwsyki7f"></script>
-  <script src="devcal.js?v=mwsyki7f"></script>
-  <script src="workpay.js?v=mwsyki7f"></script>
-  <script src="work-m.js?v=mwsyki7f"></script>
-  <script src="notes-m.js?v=mwsyki7f"></script>
-  <script src="mobile.js?v=mwsyki7f"></script>
+  <script src="config.js?v=mwurqtwd"></script>
+  <script src="vendor/supabase.js?v=mwurqtwd"></script>
+  <script src="shared.js?v=mwurqtwd"></script>
+  <script src="cloud.js?v=mwurqtwd"></script>
+  <script src="photos.js?v=mwurqtwd"></script>
+  <script src="changelog.js?v=mwurqtwd"></script>
+  <script src="calsync.js?v=mwurqtwd"></script>
+  <script src="devmode.js?v=mwurqtwd"></script>
+  <script src="backup.js?v=mwurqtwd"></script>
+  <script src="attach.js?v=mwurqtwd"></script>
+  <script src="devcal.js?v=mwurqtwd"></script>
+  <script src="workpay.js?v=mwurqtwd"></script>
+  <script src="work-m.js?v=mwurqtwd"></script>
+  <script src="notes-m.js?v=mwurqtwd"></script>
+  <script src="mobile.js?v=mwurqtwd"></script>
 </body>
 </html>

@@ -61,6 +61,8 @@ const ICONS = {
   cloud: '<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.5 1.6A3.8 3.8 0 0 1 17.5 18.5Z"/>',
   work: '<rect x="3.5" y="7.5" width="17" height="12.5" rx="3.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 12.5h17M12 11.5v2"/>',
   sticky: '<path d="M20.5 14.5V6.5a3 3 0 0 0-3-3h-11a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h8Z"/><path d="M14.5 20.5v-3a3 3 0 0 1 3-3h3"/><path d="M8 9h8M8 12.5h4.5"/>',
+  clip: '<path d="M19.5 11.5l-7.6 7.6a4.9 4.9 0 0 1-6.9-6.9l8.1-8.1a3.3 3.3 0 0 1 4.6 4.6l-8 8a1.6 1.6 0 0 1-2.3-2.3l7.4-7.4"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
 };
 function icon(name, cls = '') {
   let b = ICONS[name] || '';
@@ -202,6 +204,7 @@ function seriesSync() {
 }
 function save() {
   seriesSync();
+  try { Attach.watch(); } catch (_) { /* 첨부파일 관리자가 아직 준비 전 */ } // 뺀 첨부파일은 잠시 뒤 드라이브에서도 지워요
   if (!DEMO && Cloud.isActive()) { Cloud.saveDevice(S()); Cloud.schedulePush(); bkLiveSoon(); }
   saveCacheSoon();
   if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 폰 캘린더로도 보내요
@@ -404,7 +407,7 @@ function taskRow(t, { hideDate = false } = {}) {
       <div class="m-task-meta">
         ${due ? `<span class="${isOverdue(t) ? 'over' : ''}">${esc(due)}</span>` : ''}
         ${t.repeat && t.repeat !== 'none' ? icon('repeat', 'mini') : ''}${t.remind != null ? icon('bell', 'mini') : ''}
-        ${t.notes ? icon('note', 'mini') : ''}${subs ? `<span>${subs}</span>` : ''}
+        ${t.notes ? icon('note', 'mini') : ''}${HaruAttach.files(t).length ? icon('clip', 'mini') : ''}${subs ? `<span>${subs}</span>` : ''}
         ${t.listId !== 'inbox' ? `<span class="m-tag"><i style="background:${esc(list.color)}"></i>${esc(list.name)}</span>` : ''}
       </div>
     </div>
@@ -696,6 +699,7 @@ function taskSheetHTML() {
     <textarea id="tsTitle" class="m-ts-title" rows="1" placeholder="무엇을 하고 싶으신가요?" enterkeyhint="${ts.mode === 'add' ? 'send' : 'done'}">${t ? esc(t.title) : esc(ts.title || '')}</textarea>
     <textarea id="tsNotes" class="m-ts-notes" rows="2" placeholder="메모">${t ? esc(t.notes || '') : esc(ts.notes || '')}</textarea>
     ${t && t.subtasks.length ? `<div class="m-subs">${t.subtasks.map((s) => `<button class="m-sub ${s.done ? 'on' : ''}" data-a="ts-sub" data-sub="${s.id}"><span class="m-check sm ${s.done ? 'on' : ''}">${icon('check')}</span>${esc(s.title)}</button>`).join('')}</div>` : ''}
+    ${t ? mAttHTML(t) : ''}
     <div class="m-ts-colors" ${ts.colorsOpen ? '' : 'hidden'}>
       <button class="m-sw list ${ts.color ? '' : 'on'}" style="--c:${esc(list.color)}" data-a="ts-color" data-v="">목록</button>
       ${PRESET_COLORS.map((c) => `<button class="m-sw ${ts.color === c ? 'on' : ''}" style="--c:${c}" data-a="ts-color" data-v="${c}"></button>`).join('')}
@@ -737,6 +741,110 @@ function openTaskSheet(mode, opts = {}) {
     },
   });
 }
+// ---------- 일정 첨부파일 (구글 드라이브 · 파일 하나 5GB · attach.js) ----------
+const Attach = HaruAttach.manager({
+  newId: () => uid(),
+  findTask: (id) => (state.data ? taskById(id) : null),
+  data: () => state.data,
+  userId: () => (!DEMO && Cloud.isActive() && Cloud.user() ? Cloud.user().id : ''),
+  saved: () => { save(); mAttRefresh(); },
+  changed: () => mAttRefresh(),
+  toast: (m) => toast(m, { timeout: 6000 }),
+});
+const mAttPct = (a, b) => (b > 0 ? Math.min(100, Math.floor((a / b) * 100)) : 0);
+function mAttHTML(t) {
+  const list = HaruAttach.files(t);
+  const jobs = Attach.pending(t.id);
+  const ic = (name, type) => { const k = HaruAttach.kindOf(name, type); return `<span class="att-ic k-${k.k}">${esc(k.ext.slice(0, 4).toUpperCase())}</span>`; };
+  const row = (a) => {
+    const p = Attach.progressOf(a.drive);
+    return `<div class="m-att-row" data-att="${esc(a.id)}">
+      ${ic(a.name, a.type)}
+      <button class="m-att-main" data-a="att-open" data-att="${esc(a.id)}"><span class="m-att-name">${esc(a.name)}</span>
+        ${p ? `<span class="m-att-bar"><i style="width:${mAttPct(p.got, p.total)}%"></i></span>` : `<small>${HaruAttach.fmtSize(a.size)}</small>`}</button>
+      <button class="m-icbtn sm" data-a="att-del" data-att="${esc(a.id)}" aria-label="첨부 빼기">${icon('x')}</button>
+    </div>`;
+  };
+  const jrow = (j) => `<div class="m-att-row ${j.state === 'err' ? 'err' : 'up'}" data-job="${esc(j.id)}">
+      ${ic(j.name, j.type)}
+      <div class="m-att-main"><span class="m-att-name">${esc(j.name)}</span>
+        ${j.state === 'err' ? `<small class="m-att-err">못 올렸어요 · ${esc(j.err || '')}</small>` : `<span class="m-att-bar"><i style="width:${mAttPct(j.sent, j.size)}%"></i></span>`}</div>
+      ${j.state === 'err' ? `<button class="m-icbtn sm" data-a="att-retry" data-job="${esc(j.id)}" aria-label="다시 올리기">${icon('repeat')}</button>` : `<small class="m-att-pct">${j.state === 'wait' ? '대기' : `${mAttPct(j.sent, j.size)}%`}</small>`}
+      <button class="m-icbtn sm" data-a="att-cancel" data-job="${esc(j.id)}" aria-label="${j.state === 'err' ? '빼기' : '올리기 취소'}">${icon('x')}</button>
+    </div>`;
+  const sig = [...list.map((a) => `${a.id}:${Attach.progressOf(a.drive) ? 1 : 0}`), ...jobs.map((j) => `${j.id}:${j.state}`)].join('|');
+  return `<div class="m-att" data-task="${esc(t.id)}" data-sig="${esc(sig)}">
+    ${list.map(row).join('')}${jobs.map(jrow).join('')}
+    <button class="m-chip m-att-add" data-a="att-add">${icon('clip', 'mini')}파일 첨부${list.length ? ` · ${list.length}개` : ''}</button>
+  </div>`;
+}
+// 진행 막대만 바뀌면 막대만 고쳐요 (메모를 쓰는 중이어도 시트를 다시 그리지 않게)
+function mAttRefresh() {
+  const sh = sheets.find((s) => s.el.classList.contains('task'));
+  const box = sh && $('.m-att', sh.el);
+  const t = taskSheet && taskSheet.mode === 'edit' && state.data && taskById(taskSheet.id);
+  if (!box || !t || box.dataset.task !== t.id) return;
+  const html = mAttHTML(t);
+  const sig = (/data-sig="([^"]*)"/.exec(html) || [])[1];
+  if (sig !== box.dataset.sig) { box.outerHTML = html; return; }
+  for (const j of Attach.pending(t.id)) {
+    const r = j.state !== 'err' && box.querySelector(`[data-job="${CSS.escape(j.id)}"]`);
+    if (!r) continue;
+    const bar = r.querySelector('.m-att-bar i');
+    if (bar) bar.style.width = `${mAttPct(j.sent, j.size)}%`;
+    const pc = r.querySelector('.m-att-pct');
+    if (pc) pc.textContent = j.state === 'wait' ? '대기' : `${mAttPct(j.sent, j.size)}%`;
+  }
+  for (const a of HaruAttach.files(t)) {
+    const p = Attach.progressOf(a.drive);
+    const bar = p && box.querySelector(`[data-att="${CSS.escape(a.id)}"] .m-att-bar i`);
+    if (bar) bar.style.width = `${mAttPct(p.got, p.total)}%`;
+  }
+}
+function mAttPick(taskId) {
+  if (DEMO || !Cloud.isActive()) { toast('파일 첨부는 로그인하고 구글 드라이브를 연결하면 쓸 수 있어요', { timeout: 5000 }); return; }
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.multiple = true;
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', () => {
+    const fl = [...(inp.files || [])].map((f) => ({ name: f.name, size: f.size, type: f.type, file: f }));
+    inp.remove();
+    if (fl.length) Attach.add(taskId, fl);
+  });
+  inp.click();
+}
+async function mAttOpen(attId) {
+  const t = taskSheet && taskById(taskSheet.id);
+  const att = t && HaruAttach.files(t).find((a) => a.id === attId);
+  if (!att) return;
+  if (DEMO || !Cloud.isActive()) { toast('로그인하면 열 수 있어요'); return; }
+  if (Number(att.size) > 300 * 1024 * 1024 && !(await askConfirm(`${HaruAttach.fmtSize(att.size)}짜리 큰 파일이에요.\n폰에서 받으면 시간이 걸리고 데이터를 많이 써요. 받을까요?`, { okText: '받기' }))) return;
+  try {
+    const blob = await Attach.download(att);
+    if (!blob) return;
+    const file = new File([blob], att.name, { type: att.type || blob.type || 'application/octet-stream' });
+    // 안드로이드 앱에서는 공유 창으로 (저장 · 다른 앱으로 열기), 브라우저에서는 바로 내려받기
+    if (/HaruPlannerAndroid\//.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: att.name }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file);
+    a.download = att.name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+  } catch (e) { toast(`파일을 열지 못했어요 · ${e.message || e}`, { timeout: 6000 }); }
+}
+function mAttRemove(attId) {
+  const t = taskSheet && taskById(taskSheet.id);
+  const att = t && HaruAttach.files(t).find((a) => a.id === attId);
+  if (!att) return;
+  withUndo(`"${att.name}" 첨부를 뺐어요`, () => { t.files = HaruAttach.files(t).filter((a) => a.id !== attId); });
+  refreshTaskSheet();
+}
+
 function refreshTaskSheet() {
   const sh = sheets.find((s) => s.el.classList.contains('task'));
   if (!sh || !taskSheet) return;
@@ -1029,6 +1137,11 @@ document.addEventListener('click', (e) => {
       refreshTaskSheet();
       break;
     }
+    case 'att-add': if (taskSheet && taskSheet.mode === 'edit') mAttPick(taskSheet.id); break;
+    case 'att-open': mAttOpen(el.dataset.att); break;
+    case 'att-del': mAttRemove(el.dataset.att); break;
+    case 'att-cancel': Attach.cancel(el.dataset.job); break;
+    case 'att-retry': Attach.retry(el.dataset.job); break;
     case 'ts-sub': {
       const t = taskById(taskSheet.id);
       const s = t && t.subtasks.find((x) => x.id === el.dataset.sub);
@@ -1266,6 +1379,7 @@ function loading(text = '일정을 불러오는 중…') {
   $('#app').innerHTML = `<div class="m-loading"><div class="m-logo pulse">${icon('check')}</div><p>${text}</p></div>`;
 }
 function onRemote() {
+  try { Attach.rebase(); } catch (_) { /* 무시 */ } // 다른 기기에서 빠진 첨부파일은 이 폰이 지우지 않아요
   state.dataAt = Date.now(); // 서버와 맞춘 때 (폰 캘린더 연동이 오래된 데이터로 지우지 않게)
   render();
   if (typeof DevCal !== 'undefined') DevCal.schedule(2500); // 다른 기기에서 바꾼 것도 폰 캘린더로
