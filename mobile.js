@@ -699,7 +699,7 @@ function taskSheetHTML() {
     <textarea id="tsTitle" class="m-ts-title" rows="1" placeholder="무엇을 하고 싶으신가요?" enterkeyhint="${ts.mode === 'add' ? 'send' : 'done'}">${t ? esc(t.title) : esc(ts.title || '')}</textarea>
     <textarea id="tsNotes" class="m-ts-notes" rows="2" placeholder="메모">${t ? esc(t.notes || '') : esc(ts.notes || '')}</textarea>
     ${t && t.subtasks.length ? `<div class="m-subs">${t.subtasks.map((s) => `<button class="m-sub ${s.done ? 'on' : ''}" data-a="ts-sub" data-sub="${s.id}"><span class="m-check sm ${s.done ? 'on' : ''}">${icon('check')}</span>${esc(s.title)}</button>`).join('')}</div>` : ''}
-    ${t ? mAttHTML(t) : ''}
+    ${t ? mAttHTML(t) : mAttDraftHTML()}
     <div class="m-ts-colors" ${ts.colorsOpen ? '' : 'hidden'}>
       <button class="m-sw list ${ts.color ? '' : 'on'}" style="--c:${esc(list.color)}" data-a="ts-color" data-v="">목록</button>
       ${PRESET_COLORS.map((c) => `<button class="m-sw ${ts.color === c ? 'on' : ''}" style="--c:${c}" data-a="ts-color" data-v="${c}"></button>`).join('')}
@@ -778,10 +778,22 @@ function mAttHTML(t) {
     <button class="m-chip m-att-add" data-a="att-add">${icon('clip', 'mini')}파일 첨부${list.length ? ` · ${list.length}개` : ''}</button>
   </div>`;
 }
+// 새 할 일에 골라 둔 파일 (추가하면 올라가요)
+function mAttDraftHTML() {
+  const fl = (taskSheet && taskSheet.files) || [];
+  return `<div class="m-att" data-draft="1">
+    ${fl.map((f, i) => { const k = HaruAttach.kindOf(f.name, f.type); return `<div class="m-att-row">
+      <span class="att-ic k-${k.k}">${esc(k.ext.slice(0, 4).toUpperCase())}</span>
+      <div class="m-att-main"><span class="m-att-name">${esc(f.name)}</span><small>${HaruAttach.fmtSize(f.size)}</small></div>
+      <button class="m-icbtn sm" data-a="att-draft-x" data-i="${i}" aria-label="빼기">${icon('x')}</button></div>`; }).join('')}
+    <button class="m-chip m-att-add" data-a="att-add">${icon('clip', 'mini')}파일 첨부${fl.length ? ` · ${fl.length}개` : ''}</button>
+  </div>`;
+}
 // 진행 막대만 바뀌면 막대만 고쳐요 (메모를 쓰는 중이어도 시트를 다시 그리지 않게)
 function mAttRefresh() {
   const sh = sheets.find((s) => s.el.classList.contains('task'));
   const box = sh && $('.m-att', sh.el);
+  if (box && box.dataset.draft) { box.outerHTML = mAttDraftHTML(); return; }
   const t = taskSheet && taskSheet.mode === 'edit' && state.data && taskById(taskSheet.id);
   if (!box || !t || box.dataset.task !== t.id) return;
   const html = mAttHTML(t);
@@ -809,8 +821,15 @@ function mAttPick(taskId) {
   inp.style.display = 'none';
   document.body.appendChild(inp);
   inp.addEventListener('change', () => {
-    const fl = [...(inp.files || [])].map((f) => ({ name: f.name, size: f.size, type: f.type, file: f }));
+    let fl = [...(inp.files || [])].map((f) => ({ name: f.name, size: f.size, type: f.type, file: f }));
     inp.remove();
+    if (!taskId) { // 새 할 일: 골라 두고, 추가할 때 올려요
+      const big = fl.find((f) => f.size > HaruAttach.MAX);
+      if (big) toast(`파일 하나는 5GB까지 넣을 수 있어요 · "${big.name}"`, { timeout: 5000 });
+      fl = fl.filter((f) => f.size <= HaruAttach.MAX);
+      if (taskSheet && taskSheet.mode === 'add' && fl.length) { taskSheet.files = [...(taskSheet.files || []), ...fl]; mAttRefresh(); }
+      return;
+    }
     if (fl.length) Attach.add(taskId, fl);
   });
   inp.click();
@@ -886,8 +905,9 @@ function saveNewTask(ts) {
   if (!title) return false;
   const notes = ($('#tsNotes') ? $('#tsNotes').value : ts.notes || '').replace(/\s+$/, '');
   const d = ts.d;
-  addTask({ title, notes, listId: d.listId, color: ts.color, priority: d.priority, dueDate: d.date, endDate: d.endDate, dueTime: d.time, endTime: d.endTime, remind: d.date ? d.remind : null, repeat: d.date ? d.repeat : 'none', wdays: d.wdays, until: d.until });
+  const t = addTask({ title, notes, listId: d.listId, color: ts.color, priority: d.priority, dueDate: d.date, endDate: d.endDate, dueTime: d.time, endTime: d.endTime, remind: d.date ? d.remind : null, repeat: d.date ? d.repeat : 'none', wdays: d.wdays, until: d.until });
   toast(`"${title}" 추가했어요`);
+  if (t && ts.files && ts.files.length) Attach.add(t.id, ts.files); // 골라 둔 첨부파일
   return true;
 }
 function autoGrow(ta) { if (!ta) return; ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`; }
@@ -1137,7 +1157,8 @@ document.addEventListener('click', (e) => {
       refreshTaskSheet();
       break;
     }
-    case 'att-add': if (taskSheet && taskSheet.mode === 'edit') mAttPick(taskSheet.id); break;
+    case 'att-add': if (taskSheet) mAttPick(taskSheet.mode === 'edit' ? taskSheet.id : null); break;
+    case 'att-draft-x': if (taskSheet && taskSheet.files) { taskSheet.files.splice(Number(el.dataset.i), 1); mAttRefresh(); } break;
     case 'att-open': mAttOpen(el.dataset.att); break;
     case 'att-del': mAttRemove(el.dataset.att); break;
     case 'att-cancel': Attach.cancel(el.dataset.job); break;
