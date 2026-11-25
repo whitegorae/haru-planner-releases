@@ -2,7 +2,8 @@
 
 /* =========================================================================
  * 포스트잇 탭 (폰) — PC 포스트잇과 같은 데이터(state.data.notes)라서 클라우드로 바로 맞춰져요.
- * 한 장: { id, text, color, tone: 'pastel'|'vivid', fontSize, opacity, createdAt, updatedAt } (PC widget.js 와 같은 모양)
+ * 한 장: { id, text, doc, color, tone: 'pastel'|'vivid', fontSize, opacity, createdAt, updatedAt } (PC widget.js 와 같은 모양)
+ *  - doc: 서식 있는 내용 (할 일 체크박스 · 글자별 크기 · 색 — notedoc.js). text 는 같은 내용을 글자로 (☐ ☑ •)
  *  - opacity(배경 비침)는 PC 바탕화면용이라 폰에서는 건드리지 않고 그대로 둬요.
  * 화면 도구(state · head · openSheet · save …)는 mobile.js 것을 써요. (이 파일이 먼저 읽혀서, 쓰는 건 눌렀을 때만)
  * ========================================================================= */
@@ -31,13 +32,14 @@ const MNotes = (() => {
     return `${d.getFullYear() === new Date().getFullYear() ? '' : `${d.getFullYear()}년 `}${d.getMonth() + 1}월 ${d.getDate()}일`;
   }
   const stamp = (n) => n.updatedAt || n.createdAt || 0;
+  const blank = (n) => !NoteDoc.docOf(n).some((b) => b.r.some((r) => r.x.trim())); // 글자가 하나도 없어요 (빈 체크박스만 있어도)
 
   function view() {
     const list = notes().slice().sort((a, b) => stamp(b) - stamp(a));
     return `${head('포스트잇')}
       ${list.length ? `<div class="mn-grid">${list.map((n) => `
         <button class="mn-card${n.tone === 'vivid' ? ' vivid' : ''}" style="--nc:${esc(n.color || PASTEL[0])}" data-mn="open" data-id="${esc(n.id)}">
-          <span class="mn-text">${String(n.text || '').trim() ? esc(n.text) : '<i>빈 포스트잇</i>'}</span>
+          <span class="mn-text nd-view">${blank(n) ? '<i>빈 포스트잇</i>' : NoteDoc.html(NoteDoc.docOf(n))}</span>
           <span class="mn-when">${esc(when(stamp(n)))}</span>
         </button>`).join('')}</div>` : empty('sticky', '아직 포스트잇이 없어요', '+ 를 눌러 메모를 적어 보세요')}
       <div class="m-bottom-space"></div>`;
@@ -70,8 +72,20 @@ const MNotes = (() => {
     return `<div class="mn-ed">
       <div class="mn-ed-top">${topHTML()}</div>
       <div class="mn-pal-wrap">${palHTML()}</div>
-      <textarea id="mnText" class="mn-ta" style="font-size:${shownFs(n)}px" placeholder="메모를 적어 보세요…" spellcheck="false" ${state.offline ? 'readonly' : ''}>${esc(n.text || '')}</textarea>
+      <div class="mn-dock"></div>
+      <div id="mnText" class="mn-ta" style="font-size:${shownFs(n)}px"></div>
     </div>`;
+  }
+  // Notion 처럼 서식 넣는 칸 (notedoc.js) — 위쪽 막대로 할 일 · 글자 크기 · 색, 줄 맨 앞 "[] " 나 "/" 로도 할 일
+  function mountEditor(el, n) {
+    ed.editor = NoteDoc.editor(el.querySelector('#mnText'), {
+      placeholder: '메모를 적어 보세요… ( / 로 할 일 · 제목)',
+      readOnly: !!state.offline,
+      dock: el.querySelector('.mn-dock'),
+      base: () => { const c = cur(); return c ? shownFs(c) : FONT.def; },
+      onChange: edited,
+    });
+    ed.editor.set(NoteDoc.docOf(n));
   }
   const mySheet = () => { const sh = topSheet(); return sh && sh.el.classList.contains('mn-sheet') ? sh : null; };
   function paintLook(el, n) {
@@ -89,6 +103,7 @@ const MNotes = (() => {
     if (pal) pal.innerHTML = palHTML();
     const ta = sh.el.querySelector('#mnText');
     if (ta) ta.style.fontSize = `${shownFs(n)}px`;
+    if (ed.editor) ed.editor.refresh();
   }
   function open(id) {
     const n = id ? byId(id) : null;
@@ -105,7 +120,8 @@ const MNotes = (() => {
       onClose: finish,
       onMount: (el) => {
         paintLook(el, first);
-        if (!String(first.text || '').trim() && !state.offline) setTimeout(() => { const t = $('#mnText'); if (t) t.focus(); }, 80);
+        mountEditor(el, first);
+        if (blank(first) && !state.offline) setTimeout(() => { if (ed && ed.editor) ed.editor.focus(true); }, 80);
       },
     });
   }
@@ -121,9 +137,10 @@ const MNotes = (() => {
     saveT = 0;
     const n = cur();
     if (!ed.fresh && n) {
-      if (ed.created && !String(n.text || '').trim()) state.data.notes = notes().filter((x) => x.id !== n.id);
+      if (ed.created && blank(n)) state.data.notes = notes().filter((x) => x.id !== n.id);
       save();
     }
+    if (ed.editor) ed.editor.destroy();
     ed = null;
     render();
   }
@@ -132,13 +149,11 @@ const MNotes = (() => {
     if (!ed.fresh) save();
   }
 
-  document.addEventListener('input', (e) => {
-    if (e.target.id !== 'mnText' || !ed || !state.data) return;
-    if (state.offline) return;
-    const v = e.target.value.slice(0, 20000);
+  function edited(doc) {
+    if (!ed || !state.data || state.offline) return;
     ed.typedAt = Date.now();
     if (ed.fresh) {
-      if (!v.trim()) return; // 아직 아무것도 안 적었어요
+      if (NoteDoc.isEmpty(doc)) return; // 아직 아무것도 안 적었어요
       notes().push(ed.note);
       ed.fresh = false;
       ed.created = true;
@@ -149,17 +164,18 @@ const MNotes = (() => {
     }
     const n = cur();
     if (!n) return;
-    n.text = v;
+    n.doc = doc;
+    n.text = NoteDoc.plainOf(doc);
     n.updatedAt = Date.now();
     clearTimeout(saveT);
     saveT = setTimeout(flush, 350); // 적는 동안 조금씩 모아서 올려요 (1초 안에 PC 에 보여요)
-  });
+  }
 
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-mn]');
     if (!el || !state.data) return;
     const a = el.dataset.mn;
-    if (a === 'open') { open(el.dataset.id); return; }
+    if (a === 'open') { if (!cardCheck(e, el)) open(el.dataset.id); return; }
     if (!ed) return;
     const n = cur();
     switch (a) {
@@ -183,6 +199,7 @@ const MNotes = (() => {
         const gone = n;
         clearTimeout(saveT);
         saveT = 0;
+        if (ed.editor) ed.editor.destroy();
         ed = null;
         closeSheet({ silent: true });
         state.data.notes = notes().filter((x) => x.id !== gone.id);
@@ -199,18 +216,38 @@ const MNotes = (() => {
     if (!ed || ed.fresh || !mySheet()) return;
     const n = byId(ed.id);
     if (!n) {
+      if (ed.editor) ed.editor.destroy();
       ed = null;
       closeSheet({ silent: true });
       toast('다른 기기에서 이 포스트잇을 지웠어요');
       return;
     }
     paint();
-    const ta = $('#mnText');
-    const typing = ta && document.activeElement === ta && Date.now() - (ed.typedAt || 0) < 1500;
-    if (!ta || saveT || typing || ta.value === (n.text || '')) return;
-    const sel = document.activeElement === ta ? [ta.selectionStart, ta.selectionEnd] : null;
-    ta.value = n.text || '';
-    if (sel) ta.setSelectionRange(Math.min(sel[0], ta.value.length), Math.min(sel[1], ta.value.length));
+    const E = ed.editor;
+    if (!E) return;
+    const typing = E.focused() && Date.now() - (ed.typedAt || 0) < 1500;
+    if (saveT || typing || E.composing()) return;
+    const d = NoteDoc.docOf(n);
+    if (!E.same(d)) E.set(d, true);
+  }
+
+  // 목록 카드의 체크박스는 열지 않고 바로 체크해요
+  function cardCheck(e, card) {
+    const blk = e.target.closest('.nd-todo');
+    if (!blk || !card.contains(blk) || !canEdit()) return false;
+    const pad = parseFloat(getComputedStyle(blk).paddingLeft) || 24;
+    if (e.clientX - blk.getBoundingClientRect().left > pad + 4) return false;
+    const n = byId(card.dataset.id);
+    if (!n) return false;
+    const d = NoteDoc.docOf(n);
+    const bi = Array.from(blk.parentNode.children).indexOf(blk);
+    if (!d[bi] || d[bi].t !== 'todo') return false;
+    if (d[bi].c) delete d[bi].c; else d[bi].c = 1;
+    n.doc = d;
+    n.text = NoteDoc.plainOf(d);
+    n.updatedAt = Date.now();
+    commit();
+    return true;
   }
 
   // 적다가 앱을 내리거나 닫으면 기다리지 않고 바로 올려요 (mobile.js 의 pagehide 보다 먼저 불려요)

@@ -1456,7 +1456,7 @@ window.addEventListener('online', () => { if (state.offline) startCloud(); });
 if (/iP(hone|od|ad)/.test(navigator.userAgent)) {
   document.addEventListener('focusout', () => setTimeout(() => {
     const a = document.activeElement;
-    if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) window.scrollTo(0, 0);
+    if (!a || !(/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) window.scrollTo(0, 0);
   }, 80));
 }
 // 안드로이드 앱: 키보드가 올라와도 앱 화면 크기가 줄지 않아서(앱이 키보드 높이를 화면에 알려주지 않아요)
