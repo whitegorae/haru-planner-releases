@@ -225,19 +225,32 @@
   }
 
   // ---------- 그리기 ----------
-  function runHTML(r) {
+  // wrap: 할 일 줄은 서식 없는 글자도 span 으로 감싸요 → 체크했을 때 줄 긋기를 글자마다 그 글자 크기에 맞게 그려요
+  function runHTML(r, wrap) {
     const cls = [];
     for (const k of ['b', 'i', 'u', 's']) if (r[k]) cls.push(`nd-m${k}`);
     if (r.fc) cls.push(`nd-fc-${r.fc}`);
     if (r.bg) cls.push(`nd-bg-${r.bg}`);
     const st = r.z ? ` style="font-size: ${r.z}em;"` : '';
-    if (!cls.length && !st) return esc(r.x);
+    if (!cls.length && !st && !wrap) return esc(r.x);
     return `<span${cls.length ? ` class="${cls.join(' ')}"` : ''}${st}>${esc(r.x)}</span>`;
+  }
+  // 첫 줄 글자 크기 (체크박스 · 글머리 점을 거기에 맞춰요)
+  function firstZ(b) {
+    let z = 0;
+    for (const r of b.r) {
+      z = Math.max(z, r.z || 1);
+      if (r.x.includes('\n')) break;
+    }
+    return z || 1;
   }
   function blockHTML(b) {
     const tx = textOf(b);
-    const inner = b.r.map(runHTML).join('') + (!tx || tx.endsWith('\n') ? '<br>' : '');
-    return `<div class="nd-b nd-${b.t}${b.c ? ' on' : ''}" data-t="${b.t}"${b.c ? ' data-c="1"' : ''}>${inner}</div>`;
+    const list = b.t === 'todo' || b.t === 'ul';
+    const inner = b.r.map((r) => runHTML(r, b.t === 'todo')).join('') + (!tx || tx.endsWith('\n') ? '<br>' : '');
+    const z = list ? firstZ(b) : 1;
+    const st = z !== 1 ? ` style="--bz: ${z}; --bl: ${Math.max(1, z)};"` : '';
+    return `<div class="nd-b nd-${b.t}${b.c ? ' on' : ''}" data-t="${b.t}"${b.c ? ' data-c="1"' : ''}${st}>${inner}</div>`;
   }
   const html = (doc) => doc.map(blockHTML).join('');
 

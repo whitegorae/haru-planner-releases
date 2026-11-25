@@ -22,20 +22,29 @@
 .nd-h2 { font-size: 1.28em; font-weight: 700; line-height: 1.35; margin-top: .35em; padding: 2px 0; }
 .nd-h3 { font-size: 1.12em; font-weight: 700; line-height: 1.4; margin-top: .25em; }
 .nd-b:first-child { margin-top: 0; }
-.nd-ul { padding-left: 1.45em; }
-.nd-ul::before { content: ''; position: absolute; left: .5em; top: calc(1px + .8em - 3px); width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* --bz: 그 줄 첫 줄 글자 크기 배율, --bl: 첫 줄 높이 배율 (작은 글자여도 줄 높이는 기본 그대로) — 점 · 상자가 글자 크기를 따라가요 */
+.nd-ul { padding-left: calc(1.45em * var(--bz, 1)); }
+.nd-ul::before {
+  content: ''; position: absolute; left: calc(.5em * var(--bz, 1)); top: calc(1px + .8em * var(--bl, 1) - .18em * var(--bz, 1));
+  width: calc(.36em * var(--bz, 1)); height: calc(.36em * var(--bz, 1)); border-radius: 50%; background: currentColor;
+}
 /* 할 일: 왼쪽 상자를 누르면 체크 · 끝낸 건 흐리게 줄 긋기 (Notion 처럼) */
-.nd-todo { padding-left: 1.6em; }
+.nd-todo { padding-left: calc(1.6em * var(--bz, 1)); }
 .nd-todo::before {
-  content: ''; position: absolute; left: .12em; top: calc(1px + .8em - .52em); width: 1.04em; height: 1.04em; box-sizing: border-box;
-  border: 1.6px solid currentColor; border-radius: 4px; opacity: .6; cursor: pointer; transition: background-color .12s, opacity .12s;
+  content: ''; position: absolute; left: calc(.12em * var(--bz, 1)); top: calc(1px + .8em * var(--bl, 1) - .52em * var(--bz, 1));
+  width: calc(1.04em * var(--bz, 1)); height: calc(1.04em * var(--bz, 1)); box-sizing: border-box;
+  border: calc(1.6px * var(--bz, 1)) solid currentColor; border-radius: calc(4px * var(--bz, 1)); opacity: .6; cursor: pointer; transition: background-color .12s, opacity .12s;
 }
 .nd.on-box { cursor: pointer; }
 .nd-todo.on::before {
   opacity: 1; border-color: var(--nd-check); background: var(--nd-check) center / 82% no-repeat
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.6 8.4l2.9 2.9 5.9-6.4' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
-.nd-todo.on { color: var(--nt3, rgba(0, 0, 0, .4)); text-decoration: line-through; text-decoration-thickness: 1px; }
+/* 줄 긋기는 줄(블록)이 아니라 글자 조각마다 → 큰 글자도 글자 한가운데에 그어져요 */
+.nd-todo.on { color: var(--nt3, rgba(0, 0, 0, .4)); }
+.nd-todo.on > span, .nd-todo.on > span.nd-mu, .nd-todo.on > span.nd-ms { text-decoration-line: line-through; text-decoration-thickness: from-font; }
+.nd-todo.on > span.nd-mu { text-decoration-line: underline line-through; }
+.nd-todo.on > span[class*="nd-fc-"] { opacity: .6; }
 /* 글자 서식 */
 .nd-mb { font-weight: 700; }
 .nd-mi { font-style: italic; }
