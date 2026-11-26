@@ -677,3 +677,13 @@ html.ios-app .m-app { position: relative; inset: auto; height: 100%; }
 .m-icbtn.sm { width: 34px; height: 34px; flex: none; }
 .m-icbtn.sm .ic { width: 18px; height: 18px; }
 .m-att-add { align-self: flex-start; }
+/* ===================== 태블릿 (갤럭시탭 · 아이패드) =====================
+ * 폰 화면이 가로로 길게 늘어나지 않게: 글자·아이콘을 조금 키우고, 내용 · 탭 · 시트를 가운데 기둥에 모아요 */
+@media (min-width: 700px) {
+  :root { --u: clamp(1.1px, calc(100vw / 600), 1.3px); --col: min(100vw, calc(600 * var(--u))); --side: max(0px, calc((100vw - var(--col)) / 2)); }
+  .m-view { padding-left: calc(var(--side) + 16 * var(--u)); padding-right: calc(var(--side) + 16 * var(--u)); }
+  .m-tabs { padding-left: var(--side); padding-right: var(--side); }
+  .m-fab { right: calc(var(--side) + 18 * var(--u)); }
+  .m-sheet { left: var(--side); right: var(--side); border-radius: 26px 26px 0 0; }
+  .m-sheet-wrap.kb-top .m-sheet { left: max(8px, var(--side)); right: max(8px, var(--side)); }
+}
