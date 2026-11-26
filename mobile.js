@@ -382,6 +382,7 @@ function render() {
   view.innerHTML = ({ today: viewToday, calendar: viewCalendar, lists: viewLists, dday: viewDday, work: MWork.view, notes: MNotes.view, settings: viewSettings })[state.tab]();
   view.scrollTop = keep;
   Photos.hydrate(view);
+  if (state.tab === 'calendar') fitCal();
 }
 
 function syncDot(compact = false) {
@@ -489,6 +490,29 @@ function viewToday() {
 }
 
 // ---- 캘린더 ----
+// 가로로 놓은 태블릿: 캘린더가 화면 높이를 채우니 칸마다 들어가는 만큼만 일정 막대를 보여 줘요 (나머지는 +N)
+const BIG_CAL = matchMedia('(min-width: 900px) and (orientation: landscape)');
+function fitCal() {
+  if (!BIG_CAL.matches) return;
+  $$('#mCal .m-cell').forEach((c) => {
+    const box = c.querySelector('.m-cell-bars');
+    const bars = [...box.querySelectorAll('.m-bar')];
+    const total = Number(c.dataset.n) || bars.length;
+    const lim = c.getBoundingClientRect().bottom - 2;
+    let more = box.querySelector('.m-more');
+    for (let k = bars.length; k >= 0; k--) {
+      bars.forEach((b, i) => { b.hidden = i >= k; });
+      if (total > k) {
+        if (!more) { more = document.createElement('span'); more.className = 'm-more'; box.append(more); }
+        more.textContent = `+${total - k}`;
+      } else if (more) { more.remove(); more = null; }
+      const last = more || bars[k - 1];
+      if (!last || last.getBoundingClientRect().bottom <= lim) break;
+    }
+  });
+}
+BIG_CAL.addEventListener('change', () => { if (state.data && state.tab === 'calendar') render(); });
+addEventListener('resize', () => { if (state.data && state.tab === 'calendar') fitCal(); });
 function viewCalendar() {
   const [y, m] = state.calMonth.split('-').map(Number);
   const first = `${state.calMonth}-01`;
@@ -505,11 +529,11 @@ function viewCalendar() {
     const items = tasksOn(d);
     const hol = holidayOf(d);
     const dd = state.data.ddays.find((x) => x.date === d);
-    const shown = items.slice(0, 3);
-    cells += `<button class="m-cell${out ? ' out' : ''}${d === t ? ' today' : ''}${d === state.calSel ? ' sel' : ''}${photosOn(d).length ? ' has-ph' : ''}${wd === 0 || hol ? ' sun' : wd === 6 ? ' sat' : ''}" data-a="cal-day" data-d="${d}">
+    const shown = items.slice(0, BIG_CAL.matches ? 8 : 3); // 가로 태블릿은 칸이 커서 들어가는 만큼 (fitCal 이 맞춰요)
+    cells += `<button class="m-cell${out ? ' out' : ''}${d === t ? ' today' : ''}${d === state.calSel ? ' sel' : ''}${photosOn(d).length ? ' has-ph' : ''}${wd === 0 || hol ? ' sun' : wd === 6 ? ' sat' : ''}" data-a="cal-day" data-d="${d}" data-n="${items.length}">
       <span class="m-cell-n">${parseYmd(d).getDate()}</span>
       ${dd ? `<i class="m-cell-dd" style="background:${esc(ddColor(dd))}"></i>` : ''}${cellPhoto(d)}
-      <span class="m-cell-bars">${shown.map((x) => `<span class="m-bar ${x.done ? 'done' : ''}" style="--c:${esc(taskColor(x))}">${esc(x.title)}</span>`).join('')}${items.length > 3 ? `<span class="m-more">+${items.length - 3}</span>` : ''}</span>
+      <span class="m-cell-bars">${shown.map((x) => `<span class="m-bar ${x.done ? 'done' : ''}" style="--c:${esc(taskColor(x))}">${esc(x.title)}</span>`).join('')}${items.length > shown.length ? `<span class="m-more">+${items.length - shown.length}</span>` : ''}</span>
     </button>`;
     if (i === 34 && addDays(start, 35).slice(0, 7) !== state.calMonth) break; // 5주면 5줄만
   }
