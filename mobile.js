@@ -375,7 +375,7 @@ function render() {
       <nav class="m-tabs">${TABS.map((t) => `<button data-a="tab" data-k="${t.k}" aria-label="${t.label}" title="${t.label}"><span class="m-tab-ic">${icon(t.ic)}</span></button>`).join('')}</nav>`;
   }
   $$('.m-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.k === state.tab));
-  $('.m-fab').hidden = state.tab === 'settings';
+  $('.m-fab').hidden = state.tab === 'settings' || (state.tab === 'calendar' && BIG_CAL.matches); // 가로 태블릿 캘린더는 위쪽 + 버튼으로
   const view = $('#view');
   const keep = view.dataset.tab === state.tab + (state.listView || '') ? view.scrollTop : 0;
   view.dataset.tab = state.tab + (state.listView || '');
@@ -511,6 +511,7 @@ function fitCal() {
     }
   });
 }
+let calPanelIn = false; // 방금 열었을 때만 밀려 나오는 움직임
 BIG_CAL.addEventListener('change', () => { if (state.data && state.tab === 'calendar') render(); });
 addEventListener('resize', () => { if (state.data && state.tab === 'calendar') fitCal(); });
 function viewCalendar() {
@@ -541,11 +542,15 @@ function viewCalendar() {
   const selItems = tasksOn(sel);
   const selHol = holidayOf(sel);
   const selDd = state.data.ddays.filter((x) => x.date === sel);
-  const nav = `<div class="m-cal-nav"><button data-a="cal-move" data-dir="-1" aria-label="이전 달">${icon('chevL')}</button><button class="m-pill" data-a="cal-today">오늘</button><button data-a="cal-move" data-dir="1" aria-label="다음 달">${icon('chevR')}</button></div>`;
+  const big = BIG_CAL.matches;
+  const nav = `<div class="m-cal-nav"><button data-a="cal-move" data-dir="-1" aria-label="이전 달">${icon('chevL')}</button><button class="m-pill" data-a="cal-today">오늘</button><button data-a="cal-move" data-dir="1" aria-label="다음 달">${icon('chevR')}</button>${big ? `<button class="m-cal-add" data-a="fab" aria-label="일정 추가">${icon('plus')}</button>` : ''}</div>`;
+  const panel = big && state.calPanel;
+  const panelCls = panel ? ` open${calPanelIn ? ' in' : ''}` : '';
+  calPanelIn = false;
   return `${head(`${y}년 ${m}월`, '', '', nav)}
     <div class="m-cal" id="mCal"><div class="m-cal-wd">${heads}</div><div class="m-cal-grid">${cells}</div></div>
-    <div class="m-day">
-      <div class="m-day-h"><b>${dateLabel(sel)}</b>${selHol ? `<span class="m-hol">${esc(selHol)}</span>` : ''}${selDd.map((x) => `<span class="m-dd-chip" style="--c:${esc(ddColor(x))}">${icon('dday')}${esc(x.title)}</span>`).join('')}</div>
+    <div class="m-day${panelCls}">
+      <div class="m-day-h"><b>${dateLabel(sel)}</b>${big ? `<button class="m-day-x" data-a="cal-panel-x" aria-label="닫기">${icon('x')}</button>` : ''}${selHol ? `<span class="m-hol">${esc(selHol)}</span>` : ''}${selDd.map((x) => `<span class="m-dd-chip" style="--c:${esc(ddColor(x))}">${icon('dday')}${esc(x.title)}</span>`).join('')}</div>
       ${photoStrip(sel)}
       ${selItems.length ? selItems.map((x) => taskRow(x, { hideDate: true })).join('') : `<p class="m-day-empty">일정이 없어요 · + 로 추가</p>`}
     </div>
@@ -1061,6 +1066,7 @@ document.addEventListener('click', (e) => {
     case 'tab':
       if (state.tab === el.dataset.k && el.closest('.m-tabs')) { state.listView = null; $('#view').scrollTo({ top: 0, behavior: 'smooth' }); }
       state.tab = el.dataset.k;
+      state.calPanel = false;
       if (state.tab !== 'lists') state.listView = null;
       render();
       break;
@@ -1088,12 +1094,18 @@ document.addEventListener('click', (e) => {
     }
     // 캘린더
     case 'cal-day':
+      // 가로 태블릿: 날짜를 누르면 오른쪽에 그날 칸이 열려요 (같은 날을 다시 누르면 닫혀요)
+      if (BIG_CAL.matches) {
+        if (state.calPanel && state.calSel === el.dataset.d) state.calPanel = false;
+        else { calPanelIn = !state.calPanel; state.calPanel = true; }
+      }
       state.calSel = el.dataset.d;
       if (state.calSel.slice(0, 7) !== state.calMonth) state.calMonth = state.calSel.slice(0, 7);
       render();
       break;
-    case 'cal-move': moveMonth(Number(el.dataset.dir)); break;
-    case 'cal-today': state.calMonth = todayStr().slice(0, 7); state.calSel = todayStr(); render(); break;
+    case 'cal-panel-x': state.calPanel = false; render(); break;
+    case 'cal-move': state.calPanel = false; moveMonth(Number(el.dataset.dir)); break;
+    case 'cal-today': state.calPanel = false; state.calMonth = todayStr().slice(0, 7); state.calSel = todayStr(); render(); break;
     // 목록
     case 'list-open': state.listView = el.dataset.k; render(); $('#view').scrollTop = 0; break;
     case 'list-back': state.listView = null; render(); break;
@@ -1294,6 +1306,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Enter' && !e.isComposing && e.target.id === 'ddTitle') { e.preventDefault(); e.target.blur(); }
   if (e.key === 'Escape' && sheets.length) closeSheet({ discard: true });
+  else if (e.key === 'Escape' && state.calPanel && state.tab === 'calendar') { state.calPanel = false; render(); }
 });
 
 // 캘린더: 옆으로 밀어서 달 넘기기
@@ -1303,6 +1316,7 @@ function moveMonth(dir) {
   state.calMonth = `${n.getFullYear()}-${pad(n.getMonth() + 1)}`;
   const t = todayStr();
   state.calSel = t.slice(0, 7) === state.calMonth ? t : `${state.calMonth}-01`;
+  state.calPanel = false;
   render();
   const g = $('.m-cal-grid');
   if (g) { g.classList.add(dir > 0 ? 'from-r' : 'from-l'); }
